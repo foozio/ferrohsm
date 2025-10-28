@@ -1,0 +1,178 @@
+:root {
+  color-scheme: dark;
+  --bg: #0f172a;
+  --bg-alt: #111c33;
+  --border: #1e293b;
+  --text: #e2e8f0;
+  --accent: #38bdf8;
+  --tag-bg: #1d4ed8;
+}
+
+body {
+  margin: 0;
+  font-family: "JetBrains Mono", monospace;
+  background: var(--bg);
+  color: var(--text);
+}
+
+.top-bar {
+  background: var(--bg-alt);
+  border-bottom: 1px solid var(--border);
+  padding: 1rem 2rem;
+  display: flex;
+  justify-content: space-between;
+}
+
+.brand {
+  display: flex;
+  gap: 0.5rem;
+  align-items: center;
+  font-size: 1.2rem;
+}
+
+.container {
+  padding: 2rem;
+  max-width: 960px;
+  margin: 0 auto;
+}
+
+.subtitle {
+  color: #94a3b8;
+}
+
+table {
+  width: 100%;
+  border-collapse: collapse;
+  margin-top: 1.5rem;
+}
+
+table th, table td {
+  border: 1px solid var(--border);
+  padding: 0.75rem 1rem;
+  text-align: left;
+}
+
+table th {
+  background: var(--bg-alt);
+}
+
+.tag {
+  display: inline-block;
+  padding: 0.2rem 0.6rem;
+  margin: 0 0.2rem;
+  border-radius: 999px;
+  background: var(--tag-bg);
+  color: white;
+}
+
+.footer {
+  text-align: center;
+  padding: 2rem;
+  color: #64748b;
+}
+
+.empty {
+  text-align: center;
+  color: #475569;
+}
+
+.metrics-grid {
+  margin-top: 2rem;
+  display: grid;
+  gap: 1rem;
+  grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+}
+
+.metric-card {
+  background: var(--bg-alt);
+  border: 1px solid var(--border);
+  border-radius: 0.75rem;
+  padding: 1rem 1.25rem;
+  display: flex;
+  flex-direction: column;
+  gap: 0.3rem;
+}
+
+.metric-label {
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  color: #94a3b8;
+  font-size: 0.75rem;
+}
+
+.metric-value {
+  font-size: 1.6rem;
+  font-weight: 600;
+  color: var(--accent);
+}
+
+.metric-subtext {
+  color: #94a3b8;
+  font-size: 0.85rem;
+}
+
+.panel {
+  margin-top: 2.5rem;
+  background: var(--bg-alt);
+  border: 1px solid var(--border);
+  border-radius: 0.75rem;
+  padding: 1.5rem;
+}
+
+.panel h2 {
+  margin-top: 0;
+}
+
+.actions {
+  display: flex;
+  gap: 0.5rem;
+}
+
+.actions form {
+  margin: 0;
+}
+
+.btn {
+  font-family: inherit;
+  font-size: 0.9rem;
+  background: transparent;
+  border: 1px solid var(--border);
+  color: var(--text);
+  padding: 0.35rem 1rem;
+  border-radius: 999px;
+  cursor: pointer;
+  transition: background-color 0.2s ease, border-color 0.2s ease;
+}
+
+.btn:hover {
+  border-color: var(--accent);
+}
+
+.btn-approve {
+  border-color: #22c55e;
+  color: #22c55e;
+}
+
+.btn-approve:hover {
+  background-color: rgba(34, 197, 94, 0.12);
+}
+
+.btn-deny {
+  border-color: #f97316;
+  color: #f97316;
+}
+
+.btn-deny:hover {
+  background-color: rgba(249, 115, 22, 0.12);
+}
+
+.muted {
+  color: #94a3b8;
+}
+
+.audit-hash {
+  font-family: "JetBrains Mono", monospace;
+  font-size: 0.8rem;
+  color: #94a3b8;
+  word-break: break-all;
+}

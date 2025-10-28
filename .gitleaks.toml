@@ -1,0 +1,11 @@
+title = "FerroHSM secret scanning policy"
+
+[allowlist]
+description = "Permit known safe examples and generated artifacts"
+paths = [
+  '''Cargo\.lock''',
+  '''dist/homebrew/ferrohsm\.rb'''
+]
+regexes = [
+  '''-----BEGIN PUBLIC KEY-----'''
+]

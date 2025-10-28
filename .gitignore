@@ -1,0 +1,27 @@
+# Rust / Cargo artifacts
+target/
+**/*.rs.bk
+
+# Build outputs
+dist/**/*.tar.gz
+dist/**/stage/
+
+# Logs and temp files
+*.log
+*.tmp
+*.swp
+*.swo
+
+# OS files
+.DS_Store
+Thumbs.db
+
+# IDE project settings
+.idea/
+.vscode/
+.fleet/
+
+# Environment/config secrets
+*.env
+.env.*
+ferrohsm.local.toml

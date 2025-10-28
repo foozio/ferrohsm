@@ -1,0 +1,151 @@
+{% extends "layout.html" %}
+{% block title %}FerroHSM Dashboard{% endblock title %}
+{% block body %}
+<main class="container">
+  <h1>FerroHSM Operations Overview</h1>
+  <p class="subtitle">Real-time visibility across approvals, audit trails, and key inventory</p>
+
+  <section class="metrics-grid">
+    <article class="metric-card">
+      <span class="metric-label">Uptime</span>
+      <span class="metric-value">{{ uptime }}</span>
+    </article>
+    <article class="metric-card">
+      <span class="metric-label">Rate Limit</span>
+      <span class="metric-value">{{ rate_stats.per_second }} /s</span>
+      <span class="metric-subtext">Burst {{ rate_stats.burst }} · {{ rate_stats.active_buckets }} active</span>
+    </article>
+    <article class="metric-card">
+      <span class="metric-label">Requests</span>
+      <span class="metric-value">{{ metrics.rate_allowed }}</span>
+      <span class="metric-subtext">Blocked {{ metrics.rate_blocked }}</span>
+    </article>
+    <article class="metric-card">
+      <span class="metric-label">Key Cache</span>
+      <span class="metric-value">{{ metrics.cache_hits }} hits</span>
+      <span class="metric-subtext">Misses {{ metrics.cache_misses }} · Stores {{ metrics.cache_stores }}</span>
+    </article>
+  </section>
+
+  <section class="panel">
+    <h2>Pending Approvals</h2>
+    {% if approvals_allowed %}
+      <table>
+        <thead>
+          <tr>
+            <th>Action</th>
+            <th>Subject</th>
+            <th>Requester</th>
+            <th>Created</th>
+            <th>Status</th>
+            <th>Actions</th>
+          </tr>
+        </thead>
+        <tbody>
+        {% for approval in approvals %}
+          <tr>
+            <td>{{ approval.action }}</td>
+            <td>{{ approval.subject }}</td>
+            <td>{{ approval.requester }}</td>
+            <td>{{ approval.created_at }}</td>
+            <td>
+              {% if approval.approved_by %}
+                Approved by {{ approval.approved_by }}
+              {% else %}
+                Awaiting decision
+              {% endif %}
+            </td>
+            <td>
+              <div class="actions">
+                <form method="post" action="/ui/approvals/{{ approval.id }}/approve">
+                  <button class="btn btn-approve" type="submit">Approve</button>
+                </form>
+                <form method="post" action="/ui/approvals/{{ approval.id }}/deny">
+                  <button class="btn btn-deny" type="submit">Deny</button>
+                </form>
+              </div>
+            </td>
+          </tr>
+        {% else %}
+          <tr>
+            <td colspan="6" class="empty">No pending approvals</td>
+          </tr>
+        {% endfor %}
+        </tbody>
+      </table>
+    {% else %}
+      <p class="muted">You do not have permission to view pending approvals.</p>
+    {% endif %}
+  </section>
+
+  <section class="panel">
+    <h2>Recent Audit Trail</h2>
+    {% if can_view_audit %}
+      <table>
+        <thead>
+          <tr>
+            <th>Timestamp</th>
+            <th>Actor</th>
+            <th>Action</th>
+            <th>Key</th>
+            <th>Message</th>
+            <th>Hash</th>
+          </tr>
+        </thead>
+        <tbody>
+        {% for event in audit_events %}
+          <tr>
+            <td>{{ event.timestamp }}</td>
+            <td>{{ event.actor_id }}</td>
+            <td>{{ event.action }}</td>
+            <td>{% if event.key_id %}{{ event.key_id }}{% else %}-{% endif %}</td>
+            <td>{{ event.message }}</td>
+            <td><span class="audit-hash">{{ event.hash }}</span></td>
+          </tr>
+        {% else %}
+          <tr>
+            <td colspan="6" class="empty">No recent audit events</td>
+          </tr>
+        {% endfor %}
+        </tbody>
+      </table>
+    {% else %}
+      <p class="muted">Audit visibility requires the Auditor or Administrator role.</p>
+    {% endif %}
+  </section>
+
+  <section class="panel">
+    <h2>Key Inventory</h2>
+    <table>
+      <thead>
+        <tr>
+          <th>ID</th>
+          <th>Algorithm</th>
+          <th>State</th>
+          <th>Usage</th>
+          <th>Version</th>
+        </tr>
+      </thead>
+      <tbody>
+      {% for key in keys %}
+        <tr>
+          <td>{{ key.id }}</td>
+          <td>{{ key.algorithm }}</td>
+          <td>{{ key.state }}</td>
+          <td>
+            {% for use in key.usage %}
+              <span class="tag">{{ use }}</span>
+            {% endfor %}
+          </td>
+          <td>{{ key.version }}</td>
+        </tr>
+      {% else %}
+        <tr>
+          <td colspan="5" class="empty">No keys managed yet</td>
+        </tr>
+      {% endfor %}
+      </tbody>
+    </table>
+  </section>
+</main>
+{% endblock body %}
