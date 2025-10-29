@@ -1,13 +1,22 @@
 use std::convert::TryFrom;
+use aes_gcm::{Aes256Gcm, KeyInit, Nonce, aead::{Aead, Payload}};
+use hmac::{Hmac, Mac};
+use ::rand::rngs::OsRng;
+use ::rand::RngCore;
 
 use ml_dsa::{
     MlDsa44, MlDsa65, MlDsa87,
     signature::{Signer, Verifier, SignatureEncoding},
 };
-use pkcs8::{PrivateKeyInfo, SubjectPublicKeyInfo, der::{Decode, DecodePem, EncodePem}, EncodePrivateKey, EncodePublicKey, DecodePrivateKey, DecodePublicKey, LineEnding};
+use pkcs8::{PrivateKeyInfo, der::{Decode, EncodePem}, EncodePrivateKey, EncodePublicKey, DecodePublicKey, LineEnding};
+use pkcs8::spki::SubjectPublicKeyInfo;
+use base64;
 use sec1::DecodeEcPrivateKey;
+use aws_lc_rs::{encoding::AsDer, rsa, signature::{self, KeyPair}};
 use serde::{Deserialize, Serialize};
 use sha2::Sha256;
+use p256::ecdsa::{SigningKey as P256SigningKey};
+use p384::ecdsa::{SigningKey as P384SigningKey};
 use uuid::Uuid;
 
 use crate::{
@@ -620,12 +629,10 @@ impl CryptoEngine {
             }
             CryptoOperation::Sign { payload } => match material {
                 KeyMaterial::Rsa { private_pem, .. } => {
-                    let pki = PrivateKeyInfo::from_pem(private_pem).map_err(HsmError::crypto)?;
-                    let private_der = pki.to_der().map_err(HsmError::crypto)?;
-                    let key_pair = rsa::KeyPair::from_pkcs8(&private_der).map_err(HsmError::crypto)?;
-                    let digest = digest::digest(&digest::SHA256, &payload);
+                    let key_pair = rsa::KeyPair::from_pkcs8(private_pem.as_bytes()).map_err(HsmError::crypto)?;
                     let mut signature = vec![0; key_pair.public_modulus_len()];
-                    key_pair.sign(&digest, &mut signature).map_err(HsmError::crypto)?;
+                    let rng = aws_lc_rs::rand::SystemRandom::new();
+                    key_pair.sign(&signature::RSA_PKCS1_SHA256, &rng, &payload, &mut signature).map_err(HsmError::crypto)?;
                     Ok(KeyOperationResult::Signature { signature })
                 }
                 KeyMaterial::Ec { private_pem, .. } => {
@@ -709,11 +716,14 @@ impl CryptoEngine {
             },
             CryptoOperation::Verify { payload, signature } => match material {
                 KeyMaterial::Rsa { public_pem, .. } => {
-                    let spki = SubjectPublicKeyInfo::from_pem(public_pem).map_err(HsmError::crypto)?;
-                    let public_der = spki.to_der().map_err(HsmError::crypto)?;
-                    let public_key = rsa::PublicKey::from_der(&public_der).map_err(HsmError::crypto)?;
-                    let digest = digest::digest(&digest::SHA256, &payload);
-                    let valid = public_key.verify(&digest, &signature).is_ok();
+                    let der = {
+                        let lines: Vec<&str> = public_pem.lines().collect();
+                        if lines.len() < 3 { return Err(HsmError::crypto("Invalid PEM")) }
+                        let base64 = lines[1..lines.len()-1].join("");
+                        base64::decode(base64).map_err(HsmError::crypto)?
+                    };
+                    let public_key = signature::UnparsedPublicKey::new(&signature::RSA_PKCS1_2048_8192_SHA256, &der);
+                    let valid = public_key.verify(&payload, &signature).is_ok();
                     Ok(KeyOperationResult::Verified { valid })
                 }
                 KeyMaterial::Ec { public_pem, .. } => {
@@ -1197,12 +1207,15 @@ impl CryptoEngine {
 }
 
 fn rsa_material_aws(key_pair: rsa::KeyPair) -> HsmResult<KeyMaterial> {
-    let private_der = key_pair.to_pkcs8().map_err(HsmError::crypto)?;
-    let pki = PrivateKeyInfo::from_der(&private_der).map_err(HsmError::crypto)?;
+    let private_der = key_pair.as_der().map_err(HsmError::crypto)?;
+    let pki = PrivateKeyInfo::from_der(private_der.as_ref()).map_err(HsmError::crypto)?;
     let private_pem = pki.to_pem(LineEnding::LF).map_err(HsmError::crypto)?;
-    let public_der = key_pair.public().to_spki().map_err(HsmError::crypto)?;
-    let spki = SubjectPublicKeyInfo::from_der(&public_der).map_err(HsmError::crypto)?;
-    let public_pem = spki.to_pem(LineEnding::LF).map_err(HsmError::crypto)?;
+    let public_key = key_pair.public_key();
+    let public_der = public_key.as_der().map_err(HsmError::crypto)?;
+    let public_pem = {
+        let base64 = base64::encode(public_der.as_ref());
+        format!("-----BEGIN PUBLIC KEY-----\n{}\n-----END PUBLIC KEY-----\n", base64)
+    };
     Ok(KeyMaterial::Rsa {
         private_pem,
         public_pem,
