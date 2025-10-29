@@ -4,11 +4,11 @@
 erDiagram
     AuthContext ||--o{ AuditRecord : "initiates"
     AuthContext {
-        string actor_id
+        string actor_id PK
         uuid session_id
         string[] roles
-        string? client_fingerprint
-        string? source_ip
+        string client_fingerprint
+        string source_ip
     }
 
     KeyMetadata ||--|| KeyRecord : "describes"
@@ -18,19 +18,19 @@ erDiagram
         bytes nonce
         bytes ciphertext
         bytes hmac
-        enum material_type
+        string material_type
     }
 
     KeyMetadata {
         string id PK
         int version
-        enum algorithm
+        string algorithm
         string[] usage
-        string? description
+        string description
         datetime created_at
-        enum state
+        string state
         string[] policy_tags
-        enum tamper_status
+        string tamper_status
         json attributes
     }
 
@@ -39,10 +39,10 @@ erDiagram
         datetime timestamp
         string actor_id FK
         uuid session_id
-        enum action
-        string? key_id FK
+        string action
+        string key_id FK
         string message
-        string? signature
+        string signature
     }
 
     PolicyTag }o--o{ KeyMetadata : "labels"
@@ -58,12 +58,12 @@ erDiagram
 
     PendingApproval {
         uuid approval_id PK
-        enum action
+        string action
         string requester
         string subject
         datetime created_at
-        string? approved_by
-        datetime? approved_at
+        string approved_by
+        datetime approved_at
     }
 
     PendingApproval }o--|| AuthContext : "requested_by"
