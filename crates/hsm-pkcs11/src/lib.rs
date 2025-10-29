@@ -11,13 +11,10 @@
 //! with classical algorithms.
 
 use cryptoki_sys::{
-    CKR_CRYPTOKI_ALREADY_INITIALIZED, CKR_CRYPTOKI_NOT_INITIALIZED, CKR_FUNCTION_FAILED, CKR_OK,
-    CK_RV, CK_VOID_PTR,
+    CK_RV, CK_VOID_PTR, CKR_CRYPTOKI_ALREADY_INITIALIZED, CKR_CRYPTOKI_NOT_INITIALIZED,
+    CKR_FUNCTION_FAILED, CKR_OK,
 };
 
-
-#[cfg(feature = "pqc")]
-use hsm_core::pqc::{CryptoProvider, MlDsaSecurityLevel, MlKemSecurityLevel, SlhDsaSecurityLevel};
 use parking_lot::RwLock;
 use std::sync::Arc;
 use thiserror::Error;

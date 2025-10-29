@@ -187,10 +187,10 @@ impl fmt::Display for PqKeyMaterialType {
             PqKeyMaterialType::MlDsa(level) => write!(f, "{}", level),
             PqKeyMaterialType::SlhDsa(level) => write!(f, "{}", level),
             PqKeyMaterialType::HybridEcdhMlKem(ec_type, pq_level) => {
-                write!(f, "Hybrid-{}-{}", ec_type, pq_level)
+                write!(f, "Hybrid-{ec_type:?}-{pq_level}")
             }
             PqKeyMaterialType::HybridEcdsaMlDsa(ec_type, pq_level) => {
-                write!(f, "Hybrid-{}-{}", ec_type, pq_level)
+                write!(f, "Hybrid-{ec_type:?}-{pq_level}")
             }
         }
     }
@@ -218,10 +218,10 @@ impl fmt::Display for PqKeyAlgorithm {
             PqKeyAlgorithm::MlDsa(level) => write!(f, "{}", level),
             PqKeyAlgorithm::SlhDsa(level) => write!(f, "{}", level),
             PqKeyAlgorithm::HybridEcdhMlKem(ec_alg, pq_level) => {
-                write!(f, "Hybrid-{}-{}", ec_alg, pq_level)
+                write!(f, "Hybrid-{ec_alg:?}-{pq_level}")
             }
             PqKeyAlgorithm::HybridEcdsaMlDsa(ec_alg, pq_level) => {
-                write!(f, "Hybrid-{}-{}", ec_alg, pq_level)
+                write!(f, "Hybrid-{ec_alg:?}-{pq_level}")
             }
         }
     }

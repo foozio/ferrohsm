@@ -1,8 +1,7 @@
 use ml_dsa::{
-    signature::{Keypair, Signer, Verifier},
-    KeyGen, MlDsa44,
+    KeyGen, MlDsa44, SigningKey, VerifyingKey,
+    signature::{Signer, Verifier},
 };
-use pkcs8::{der::Decode, PrivateKeyInfo, SubjectPublicKeyInfo};
 use rand::thread_rng;
 
 fn main() {
@@ -14,27 +13,20 @@ fn main() {
     let signing_key = kp.signing_key();
     let verifying_key = kp.verifying_key();
 
-    // Sign the message
+    // Sign the message and verify the signature
     let signature = signing_key.sign(msg);
+    verifying_key.verify(msg, &signature).expect("verify");
 
-    // Verify the signature
-    assert!(verifying_key.verify(msg, &signature).is_ok());
+    // Encode keys to their byte representation
+    let encoded_signing = signing_key.encode();
+    let encoded_verifying = verifying_key.encode();
 
-    // Now, let's try to do the same with raw bytes
-    let private_key_bytes = signing_key.to_pkcs8_der().unwrap();
-    let public_key_bytes = verifying_key.to_public_key_der().unwrap();
+    // Recreate keys from their encoded form and repeat the round-trip
+    let signing_key2 = SigningKey::<MlDsa44>::decode(&encoded_signing);
+    let verifying_key2 = VerifyingKey::<MlDsa44>::decode(&encoded_verifying);
 
-    // Create a signing key from raw bytes
-    let pki = PrivateKeyInfo::from_der(&private_key_bytes).unwrap();
-    let signing_key2 = ml_dsa::SigningKey::<MlDsa44>::try_from(pki).unwrap();
-
-    // Create a verifying key from raw bytes
-    let spki = SubjectPublicKeyInfo::from_der(&public_key_bytes).unwrap();
-    let verifying_key2 = ml_dsa::VerifyingKey::<MlDsa44>::try_from(spki).unwrap();
-
-    // Sign and verify again
     let signature2 = signing_key2.sign(msg);
-    assert!(verifying_key2.verify(msg, &signature2).is_ok());
+    verifying_key2.verify(msg, &signature2).expect("verify");
 
-    println!("All tests passed!");
+    println!("ML-DSA signing round-trip succeeded!");
 }

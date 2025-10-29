@@ -97,6 +97,6 @@ impl AttributeSet {
         template
             .entries()
             .iter()
-            .all(|(id, value)| self.get(*id).map_or(false, |candidate| candidate == value))
+            .all(|(id, value)| self.get(*id) == Some(value))
     }
 }

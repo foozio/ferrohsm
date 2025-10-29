@@ -23,6 +23,17 @@ Hybrid cryptography options are also available, combining traditional elliptic c
 
 Enhanced policy controls ensure proper governance of post-quantum operations, with configurable dual-control requirements and role-based restrictions for higher security levels.
 
+### PQC REST API surface
+
+When the `pqc` feature flag is enabled, the server now wires dedicated REST endpoints for managing post-quantum material and hybrid workflows alongside the classical APIs:
+
+- `POST /api/v1/keys/pqc` – create ML-KEM, ML-DSA, or SLH-DSA key material at the requested security level.
+- `POST /api/v1/keys/hybrid` – mint hybrid elliptic-curve + PQC key pairs (ECDH+ML-KEM or ECDSA+ML-DSA).
+- `POST /api/v1/keys/:id/encapsulate` – run ML-KEM encapsulation and return the ciphertext + shared secret (Base64).
+- `POST /api/v1/keys/:id/decapsulate` – accept a Base64 ciphertext and derive the shared secret via ML-KEM decapsulation.
+
+These routes are registered automatically when building or running `hsm-server` with `--features pqc`, and they inherit the same RBAC, policy, audit, and dual-control protections as the classical endpoints.
+
 ## Getting Started
 
 1. Install Rust (1.75+ recommended).
@@ -128,6 +139,8 @@ Enhanced policy controls ensure proper governance of post-quantum operations, wi
      --jwt-algorithm hs256 \
      list
    ```
+
+   The tabular output now includes a `Tags` column so you can confirm policy annotations at a glance. Combine it with the existing `--tags` filter to scope results to specific retention or approval policies.
 
    The CLI expects the JWT material to align with the server configuration. When using `--jwt-secret` with HS256, provide a base64 or UTF-8 value that is at least 32 bytes after decoding so it passes server validation. For asymmetric issuers:
 

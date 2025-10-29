@@ -19,28 +19,27 @@ impl Default for PqcPolicyController {
     fn default() -> Self {
         let mut admin_approval_algorithms = HashSet::new();
         admin_approval_algorithms.insert(KeyAlgorithm::MlKem1024);
-        admin_approval_algorithms.insert(KeyAlgorithm::MlDsa135);
-        admin_approval_algorithms.insert(KeyAlgorithm::SlhDsaSha2256f);
-        admin_approval_algorithms.insert(KeyAlgorithm::SlhDsaSha2256s);
+        admin_approval_algorithms.insert(KeyAlgorithm::MlDsa87);
+        admin_approval_algorithms.insert(KeyAlgorithm::SlhDsa256f);
+        admin_approval_algorithms.insert(KeyAlgorithm::SlhDsa256s);
         admin_approval_algorithms.insert(KeyAlgorithm::HybridP384MlKem1024);
 
         let mut dual_control_algorithms = HashSet::new();
         dual_control_algorithms.insert(KeyAlgorithm::MlKem768);
         dual_control_algorithms.insert(KeyAlgorithm::MlKem1024);
         dual_control_algorithms.insert(KeyAlgorithm::MlDsa87);
-        dual_control_algorithms.insert(KeyAlgorithm::MlDsa135);
-        dual_control_algorithms.insert(KeyAlgorithm::SlhDsaSha2192f);
-        dual_control_algorithms.insert(KeyAlgorithm::SlhDsaSha2192s);
-        dual_control_algorithms.insert(KeyAlgorithm::SlhDsaSha2256f);
-        dual_control_algorithms.insert(KeyAlgorithm::SlhDsaSha2256s);
+        dual_control_algorithms.insert(KeyAlgorithm::SlhDsa192f);
+        dual_control_algorithms.insert(KeyAlgorithm::SlhDsa192s);
+        dual_control_algorithms.insert(KeyAlgorithm::SlhDsa256f);
+        dual_control_algorithms.insert(KeyAlgorithm::SlhDsa256s);
         dual_control_algorithms.insert(KeyAlgorithm::HybridP256MlKem768);
         dual_control_algorithms.insert(KeyAlgorithm::HybridP384MlKem1024);
 
         let mut restricted_algorithms = HashSet::new();
         restricted_algorithms.insert(KeyAlgorithm::MlKem1024);
-        restricted_algorithms.insert(KeyAlgorithm::MlDsa135);
-        restricted_algorithms.insert(KeyAlgorithm::SlhDsaSha2256f);
-        restricted_algorithms.insert(KeyAlgorithm::SlhDsaSha2256s);
+        restricted_algorithms.insert(KeyAlgorithm::MlDsa87);
+        restricted_algorithms.insert(KeyAlgorithm::SlhDsa256f);
+        restricted_algorithms.insert(KeyAlgorithm::SlhDsa256s);
         restricted_algorithms.insert(KeyAlgorithm::HybridP384MlKem1024);
 
         Self {
@@ -128,16 +127,16 @@ impl PqcPolicyController {
             KeyAlgorithm::MlKem512 | KeyAlgorithm::MlKem768 | KeyAlgorithm::MlKem1024 => {
                 tags.push("pqc.kem".to_string());
             }
-            KeyAlgorithm::MlDsa65 | KeyAlgorithm::MlDsa87 | KeyAlgorithm::MlDsa135 => {
+            KeyAlgorithm::MlDsa44 | KeyAlgorithm::MlDsa65 | KeyAlgorithm::MlDsa87 => {
                 tags.push("pqc.signature".to_string());
                 tags.push("pqc.ml_dsa".to_string());
             }
-            KeyAlgorithm::SlhDsaSha2128f
-            | KeyAlgorithm::SlhDsaSha2128s
-            | KeyAlgorithm::SlhDsaSha2192f
-            | KeyAlgorithm::SlhDsaSha2192s
-            | KeyAlgorithm::SlhDsaSha2256f
-            | KeyAlgorithm::SlhDsaSha2256s => {
+            KeyAlgorithm::SlhDsa128f
+            | KeyAlgorithm::SlhDsa128s
+            | KeyAlgorithm::SlhDsa192f
+            | KeyAlgorithm::SlhDsa192s
+            | KeyAlgorithm::SlhDsa256f
+            | KeyAlgorithm::SlhDsa256s => {
                 tags.push("pqc.signature".to_string());
                 tags.push("pqc.slh_dsa".to_string());
             }

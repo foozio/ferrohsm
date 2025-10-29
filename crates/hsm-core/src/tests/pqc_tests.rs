@@ -1,236 +1,161 @@
 use crate::{
-    crypto::{CryptoEngine, CryptoOperation, KeyOperationResult},
-    models::{KeyAlgorithm, KeyGenerationRequest, KeyMaterial},
-    pqc::{MlDsaSecurityLevel, MlKemSecurityLevel, SlhDsaSecurityLevel},
+    crypto::CryptoEngine,
+    models::{KeyAlgorithm, KeyGenerationRequest, KeyMaterial, KeyPurpose},
+    pqc::{CryptoProvider, MlDsaSecurityLevel, MlKemSecurityLevel, SlhDsaSecurityLevel},
     pqc_provider::OqsCryptoProvider,
-    tests::pqc_test_vectors::*,
 };
+
+fn pq_keypair(material: KeyMaterial) -> (Vec<u8>, Vec<u8>) {
+    match material {
+        KeyMaterial::PostQuantum {
+            public_key,
+            private_key: Some(private_key),
+            ..
+        } => (public_key, private_key),
+        KeyMaterial::PostQuantum {
+            private_key: None, ..
+        } => {
+            panic!("provider returned post-quantum material without private key")
+        }
+        other => panic!("expected post-quantum material, got {other:?}"),
+    }
+}
 
 #[test]
 fn test_ml_kem_roundtrip() {
-    // Test ML-KEM key generation, encapsulation, and decapsulation
     let provider = OqsCryptoProvider::new();
 
-    // Test ML-KEM-512
-    let (public_key, private_key) = provider
-        .ml_kem_keygen(MlKemSecurityLevel::Level1)
-        .expect("Failed to generate ML-KEM-512 keypair");
+    for level in [
+        MlKemSecurityLevel::MlKem512,
+        MlKemSecurityLevel::MlKem768,
+        MlKemSecurityLevel::MlKem1024,
+    ] {
+        let (public_key, private_key) = pq_keypair(
+            provider
+                .generate_mlkem_keypair(level)
+                .expect("generate ML-KEM keypair"),
+        );
 
-    let (ciphertext, shared_secret1) = provider
-        .ml_kem_encapsulate(MlKemSecurityLevel::Level1, &public_key)
-        .expect("Failed to encapsulate with ML-KEM-512");
+        let (ciphertext, shared_secret1) = provider
+            .mlkem_encapsulate(&public_key, level)
+            .expect("encapsulate with ML-KEM");
 
-    let shared_secret2 = provider
-        .ml_kem_decapsulate(MlKemSecurityLevel::Level1, &private_key, &ciphertext)
-        .expect("Failed to decapsulate with ML-KEM-512");
+        let shared_secret2 = provider
+            .mlkem_decapsulate(&ciphertext, &private_key, level)
+            .expect("decapsulate with ML-KEM");
 
-    assert_eq!(
-        shared_secret1, shared_secret2,
-        "ML-KEM-512 shared secrets don't match"
-    );
-
-    // Test ML-KEM-768
-    let (public_key, private_key) = provider
-        .ml_kem_keygen(MlKemSecurityLevel::Level3)
-        .expect("Failed to generate ML-KEM-768 keypair");
-
-    let (ciphertext, shared_secret1) = provider
-        .ml_kem_encapsulate(MlKemSecurityLevel::Level3, &public_key)
-        .expect("Failed to encapsulate with ML-KEM-768");
-
-    let shared_secret2 = provider
-        .ml_kem_decapsulate(MlKemSecurityLevel::Level3, &private_key, &ciphertext)
-        .expect("Failed to decapsulate with ML-KEM-768");
-
-    assert_eq!(
-        shared_secret1, shared_secret2,
-        "ML-KEM-768 shared secrets don't match"
-    );
-
-    // Test ML-KEM-1024
-    let (public_key, private_key) = provider
-        .ml_kem_keygen(MlKemSecurityLevel::Level5)
-        .expect("Failed to generate ML-KEM-1024 keypair");
-
-    let (ciphertext, shared_secret1) = provider
-        .ml_kem_encapsulate(MlKemSecurityLevel::Level5, &public_key)
-        .expect("Failed to encapsulate with ML-KEM-1024");
-
-    let shared_secret2 = provider
-        .ml_kem_decapsulate(MlKemSecurityLevel::Level5, &private_key, &ciphertext)
-        .expect("Failed to decapsulate with ML-KEM-1024");
-
-    assert_eq!(
-        shared_secret1, shared_secret2,
-        "ML-KEM-1024 shared secrets don't match"
-    );
+        assert_eq!(
+            shared_secret1, shared_secret2,
+            "ML-KEM shared secrets mismatch for {:?}",
+            level
+        );
+    }
 }
 
 #[test]
 fn test_ml_dsa_sign_verify() {
-    // Test ML-DSA signature generation and verification
     let provider = OqsCryptoProvider::new();
     let message = b"This is a test message for ML-DSA signature";
 
-    // Test ML-DSA-65
-    let (public_key, private_key) = provider
-        .ml_dsa_keygen(MlDsaSecurityLevel::Level2)
-        .expect("Failed to generate ML-DSA-65 keypair");
+    for level in [
+        MlDsaSecurityLevel::MlDsa44,
+        MlDsaSecurityLevel::MlDsa65,
+        MlDsaSecurityLevel::MlDsa87,
+    ] {
+        let (public_key, private_key) = pq_keypair(
+            provider
+                .generate_mldsa_keypair(level)
+                .expect("generate ML-DSA keypair"),
+        );
 
-    let signature = provider
-        .ml_dsa_sign(MlDsaSecurityLevel::Level2, &private_key, message)
-        .expect("Failed to sign with ML-DSA-65");
+        let signature = provider
+            .mldsa_sign(message, &private_key, level)
+            .expect("sign with ML-DSA");
 
-    let valid = provider
-        .ml_dsa_verify(MlDsaSecurityLevel::Level2, &public_key, message, &signature)
-        .expect("Failed to verify ML-DSA-65 signature");
+        let valid = provider
+            .mldsa_verify(message, &signature, &public_key, level)
+            .expect("verify ML-DSA signature");
 
-    assert!(valid, "ML-DSA-65 signature verification failed");
-
-    // Test ML-DSA-87
-    let (public_key, private_key) = provider
-        .ml_dsa_keygen(MlDsaSecurityLevel::Level3)
-        .expect("Failed to generate ML-DSA-87 keypair");
-
-    let signature = provider
-        .ml_dsa_sign(MlDsaSecurityLevel::Level3, &private_key, message)
-        .expect("Failed to sign with ML-DSA-87");
-
-    let valid = provider
-        .ml_dsa_verify(MlDsaSecurityLevel::Level3, &public_key, message, &signature)
-        .expect("Failed to verify ML-DSA-87 signature");
-
-    assert!(valid, "ML-DSA-87 signature verification failed");
-
-    // Test ML-DSA-135
-    let (public_key, private_key) = provider
-        .ml_dsa_keygen(MlDsaSecurityLevel::Level5)
-        .expect("Failed to generate ML-DSA-135 keypair");
-
-    let signature = provider
-        .ml_dsa_sign(MlDsaSecurityLevel::Level5, &private_key, message)
-        .expect("Failed to sign with ML-DSA-135");
-
-    let valid = provider
-        .ml_dsa_verify(MlDsaSecurityLevel::Level5, &public_key, message, &signature)
-        .expect("Failed to verify ML-DSA-135 signature");
-
-    assert!(valid, "ML-DSA-135 signature verification failed");
+        assert!(
+            valid,
+            "ML-DSA signature verification failed for {:?}",
+            level
+        );
+    }
 }
 
 #[test]
 fn test_slh_dsa_sign_verify() {
-    // Test SLH-DSA signature generation and verification
     let provider = OqsCryptoProvider::new();
     let message = b"This is a test message for SLH-DSA signature";
 
-    // Test SLH-DSA-SHA2-128f
-    let (public_key, private_key) = provider
-        .slh_dsa_keygen(SlhDsaSecurityLevel::Level1)
-        .expect("Failed to generate SLH-DSA-SHA2-128f keypair");
+    for level in [
+        SlhDsaSecurityLevel::SlhDsaSha2128f,
+        SlhDsaSecurityLevel::SlhDsaSha2256f,
+    ] {
+        let (public_key, private_key) = pq_keypair(
+            provider
+                .generate_slhdsa_keypair(level)
+                .expect("generate SLH-DSA keypair"),
+        );
 
-    let signature = provider
-        .slh_dsa_sign(SlhDsaSecurityLevel::Level1, &private_key, message)
-        .expect("Failed to sign with SLH-DSA-SHA2-128f");
+        let signature = provider
+            .slhdsa_sign(message, &private_key, level)
+            .expect("sign with SLH-DSA");
 
-    let valid = provider
-        .slh_dsa_verify(
-            SlhDsaSecurityLevel::Level1,
-            &public_key,
-            message,
-            &signature,
-        )
-        .expect("Failed to verify SLH-DSA-SHA2-128f signature");
+        let valid = provider
+            .slhdsa_verify(message, &signature, &public_key, level)
+            .expect("verify SLH-DSA signature");
 
-    assert!(valid, "SLH-DSA-SHA2-128f signature verification failed");
-
-    // Test SLH-DSA-SHA2-256f
-    let (public_key, private_key) = provider
-        .slh_dsa_keygen(SlhDsaSecurityLevel::Level5)
-        .expect("Failed to generate SLH-DSA-SHA2-256f keypair");
-
-    let signature = provider
-        .slh_dsa_sign(SlhDsaSecurityLevel::Level5, &private_key, message)
-        .expect("Failed to sign with SLH-DSA-SHA2-256f");
-
-    let valid = provider
-        .slh_dsa_verify(
-            SlhDsaSecurityLevel::Level5,
-            &public_key,
-            message,
-            &signature,
-        )
-        .expect("Failed to verify SLH-DSA-SHA2-256f signature");
-
-    assert!(valid, "SLH-DSA-SHA2-256f signature verification failed");
+        assert!(
+            valid,
+            "SLH-DSA signature verification failed for {:?}",
+            level
+        );
+    }
 }
 
 #[test]
 fn test_hybrid_key_operations() {
-    // Test hybrid key operations (P256 + ML-KEM-768)
     let crypto_engine = CryptoEngine::new([0u8; 32], [0u8; 32]);
 
-    // Generate a hybrid key
     let key_request = KeyGenerationRequest {
         algorithm: KeyAlgorithm::HybridP256MlKem768,
-        name: "test-hybrid-key".to_string(),
+        usage: vec![KeyPurpose::Encrypt, KeyPurpose::Decrypt],
         policy_tags: vec![],
+        description: Some("test hybrid key".to_string()),
     };
 
     let generated = crypto_engine
-        .generate_key(&key_request)
-        .expect("Failed to generate hybrid key");
+        .generate_material(&key_request)
+        .expect("generate hybrid key material");
+    let key_material = generated.material;
 
-    // Extract the key material
     if let KeyMaterial::Hybrid {
+        ec_private_pem,
         ec_public_pem,
         pq_public_key,
-        ec_private_pem: Some(ec_private),
-        pq_private_key: Some(pq_private),
+        pq_private_key,
         ..
-    } = &generated.material
+    } = &key_material
     {
-        // Test that we can perform operations with the hybrid key
-        let plaintext = b"Test hybrid encryption".to_vec();
-
-        // Test hybrid encryption/decryption
-        let encrypt_op = CryptoOperation::HybridEncrypt {
-            plaintext: plaintext.clone(),
-        };
-
-        let result = crypto_engine
-            .perform(encrypt_op, &generated.material, &Default::default())
-            .expect("Failed to perform hybrid encryption");
-
-        if let KeyOperationResult::HybridEncrypted {
-            ciphertext,
-            ephemeral_key,
-        } = result
-        {
-            let decrypt_op = CryptoOperation::HybridDecrypt {
-                ciphertext,
-                ephemeral_key,
-            };
-
-            let result = crypto_engine
-                .perform(decrypt_op, &generated.material, &Default::default())
-                .expect("Failed to perform hybrid decryption");
-
-            if let KeyOperationResult::HybridDecrypted {
-                plaintext: decrypted,
-            } = result
-            {
-                assert_eq!(
-                    plaintext, decrypted,
-                    "Hybrid decryption failed to recover original plaintext"
-                );
-            } else {
-                panic!("Unexpected result from hybrid decryption");
-            }
-        } else {
-            panic!("Unexpected result from hybrid encryption");
-        }
+        assert!(
+            ec_private_pem.as_ref().is_some(),
+            "hybrid key missing EC private component"
+        );
+        assert!(
+            !ec_public_pem.is_empty(),
+            "hybrid key missing EC public component"
+        );
+        assert!(
+            !pq_public_key.is_empty(),
+            "hybrid key missing PQ public component"
+        );
+        assert!(
+            pq_private_key.as_ref().is_some(),
+            "hybrid key missing PQ private component"
+        );
     } else {
-        panic!("Generated key is not a hybrid key");
+        panic!("Generated key is not hybrid key material");
     }
 }

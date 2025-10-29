@@ -33,7 +33,7 @@ pub struct SlhDsaTestVector {
 
 // ML-KEM-512 test vector (placeholder)
 pub const ML_KEM_512_TEST_VECTOR: MlKemTestVector = MlKemTestVector {
-    security_level: MlKemSecurityLevel::Level1,
+    security_level: MlKemSecurityLevel::MlKem512,
     public_key: &[0u8; 800],   // Approximate size for ML-KEM-512 public key
     private_key: &[0u8; 1632], // Approximate size for ML-KEM-512 private key
     ciphertext: &[0u8; 768],   // Approximate size for ML-KEM-512 ciphertext
@@ -42,7 +42,7 @@ pub const ML_KEM_512_TEST_VECTOR: MlKemTestVector = MlKemTestVector {
 
 // ML-KEM-768 test vector (placeholder)
 pub const ML_KEM_768_TEST_VECTOR: MlKemTestVector = MlKemTestVector {
-    security_level: MlKemSecurityLevel::Level3,
+    security_level: MlKemSecurityLevel::MlKem768,
     public_key: &[0u8; 1184],  // Approximate size for ML-KEM-768 public key
     private_key: &[0u8; 2400], // Approximate size for ML-KEM-768 private key
     ciphertext: &[0u8; 1088],  // Approximate size for ML-KEM-768 ciphertext
@@ -51,7 +51,7 @@ pub const ML_KEM_768_TEST_VECTOR: MlKemTestVector = MlKemTestVector {
 
 // ML-KEM-1024 test vector (placeholder)
 pub const ML_KEM_1024_TEST_VECTOR: MlKemTestVector = MlKemTestVector {
-    security_level: MlKemSecurityLevel::Level5,
+    security_level: MlKemSecurityLevel::MlKem1024,
     public_key: &[0u8; 1568],  // Approximate size for ML-KEM-1024 public key
     private_key: &[0u8; 3168], // Approximate size for ML-KEM-1024 private key
     ciphertext: &[0u8; 1568],  // Approximate size for ML-KEM-1024 ciphertext
@@ -60,7 +60,7 @@ pub const ML_KEM_1024_TEST_VECTOR: MlKemTestVector = MlKemTestVector {
 
 // ML-DSA-65 test vector (placeholder)
 pub const ML_DSA_65_TEST_VECTOR: MlDsaTestVector = MlDsaTestVector {
-    security_level: MlDsaSecurityLevel::Level2,
+    security_level: MlDsaSecurityLevel::MlDsa65,
     public_key: &[0u8; 1312],  // Approximate size for ML-DSA-65 public key
     private_key: &[0u8; 2528], // Approximate size for ML-DSA-65 private key
     message: &[0u8; 32],       // Sample message
@@ -69,7 +69,7 @@ pub const ML_DSA_65_TEST_VECTOR: MlDsaTestVector = MlDsaTestVector {
 
 // ML-DSA-87 test vector (placeholder)
 pub const ML_DSA_87_TEST_VECTOR: MlDsaTestVector = MlDsaTestVector {
-    security_level: MlDsaSecurityLevel::Level3,
+    security_level: MlDsaSecurityLevel::MlDsa87,
     public_key: &[0u8; 1952],  // Approximate size for ML-DSA-87 public key
     private_key: &[0u8; 3856], // Approximate size for ML-DSA-87 private key
     message: &[0u8; 32],       // Sample message
@@ -78,7 +78,7 @@ pub const ML_DSA_87_TEST_VECTOR: MlDsaTestVector = MlDsaTestVector {
 
 // ML-DSA-135 test vector (placeholder)
 pub const ML_DSA_135_TEST_VECTOR: MlDsaTestVector = MlDsaTestVector {
-    security_level: MlDsaSecurityLevel::Level5,
+    security_level: MlDsaSecurityLevel::MlDsa87,
     public_key: &[0u8; 2592],  // Approximate size for ML-DSA-135 public key
     private_key: &[0u8; 4896], // Approximate size for ML-DSA-135 private key
     message: &[0u8; 32],       // Sample message
@@ -87,7 +87,7 @@ pub const ML_DSA_135_TEST_VECTOR: MlDsaTestVector = MlDsaTestVector {
 
 // SLH-DSA-SHA2-128f test vector (placeholder)
 pub const SLH_DSA_SHA2_128F_TEST_VECTOR: SlhDsaTestVector = SlhDsaTestVector {
-    security_level: SlhDsaSecurityLevel::Level1,
+    security_level: SlhDsaSecurityLevel::SlhDsaSha2128f,
     public_key: &[0u8; 32], // Approximate size for SLH-DSA-SHA2-128f public key
     private_key: &[0u8; 64], // Approximate size for SLH-DSA-SHA2-128f private key
     message: &[0u8; 32],    // Sample message
@@ -96,7 +96,7 @@ pub const SLH_DSA_SHA2_128F_TEST_VECTOR: SlhDsaTestVector = SlhDsaTestVector {
 
 // SLH-DSA-SHA2-256f test vector (placeholder)
 pub const SLH_DSA_SHA2_256F_TEST_VECTOR: SlhDsaTestVector = SlhDsaTestVector {
-    security_level: SlhDsaSecurityLevel::Level5,
+    security_level: SlhDsaSecurityLevel::SlhDsaSha2256f,
     public_key: &[0u8; 64], // Approximate size for SLH-DSA-SHA2-256f public key
     private_key: &[0u8; 128], // Approximate size for SLH-DSA-SHA2-256f private key
     message: &[0u8; 32],    // Sample message

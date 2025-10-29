@@ -1,22 +1,32 @@
-use std::convert::TryFrom;
-use aes_gcm::{Aes256Gcm, KeyInit, Nonce, aead::{Aead, Payload}};
-use hmac::{Hmac, Mac};
-use ::rand::rngs::OsRng;
 use ::rand::RngCore;
+use ::rand::rngs::OsRng;
+use aes_gcm::{
+    Aes256Gcm, KeyInit, Nonce,
+    aead::{Aead, Payload},
+};
+use hmac::{Hmac, Mac};
+use std::convert::TryFrom;
 
+use aws_lc_rs::{
+    encoding::AsDer,
+    rsa,
+    signature::{self, KeyPair},
+};
+use base64::{Engine as _, engine::general_purpose};
 use ml_dsa::{
     MlDsa44, MlDsa65, MlDsa87,
-    signature::{Signer, Verifier, SignatureEncoding},
+    signature::{SignatureEncoding, Signer, Verifier},
 };
-use pkcs8::{PrivateKeyInfo, der::{Decode, EncodePem}, EncodePrivateKey, EncodePublicKey, DecodePublicKey, LineEnding};
+use p256::ecdsa::SigningKey as P256SigningKey;
+use p384::ecdsa::SigningKey as P384SigningKey;
 use pkcs8::spki::SubjectPublicKeyInfo;
-use base64;
+use pkcs8::{
+    DecodePublicKey, EncodePrivateKey, EncodePublicKey, LineEnding, PrivateKeyInfo,
+    der::{Decode, EncodePem},
+};
 use sec1::DecodeEcPrivateKey;
-use aws_lc_rs::{encoding::AsDer, rsa, signature::{self, KeyPair}};
 use serde::{Deserialize, Serialize};
 use sha2::Sha256;
-use p256::ecdsa::{SigningKey as P256SigningKey};
-use p384::ecdsa::{SigningKey as P384SigningKey};
 use uuid::Uuid;
 
 use crate::{
@@ -185,11 +195,13 @@ impl CryptoEngine {
                 KeyMaterial::Symmetric { key }
             }
             KeyAlgorithm::Rsa2048 => {
-                let key_pair = rsa::KeyPair::generate(rsa::KeySize::Rsa2048).map_err(HsmError::crypto)?;
+                let key_pair =
+                    rsa::KeyPair::generate(rsa::KeySize::Rsa2048).map_err(HsmError::crypto)?;
                 rsa_material_aws(key_pair)?
             }
             KeyAlgorithm::Rsa4096 => {
-                let key_pair = rsa::KeyPair::generate(rsa::KeySize::Rsa4096).map_err(HsmError::crypto)?;
+                let key_pair =
+                    rsa::KeyPair::generate(rsa::KeySize::Rsa4096).map_err(HsmError::crypto)?;
                 rsa_material_aws(key_pair)?
             }
             KeyAlgorithm::P256 => {
@@ -629,10 +641,13 @@ impl CryptoEngine {
             }
             CryptoOperation::Sign { payload } => match material {
                 KeyMaterial::Rsa { private_pem, .. } => {
-                    let key_pair = rsa::KeyPair::from_pkcs8(private_pem.as_bytes()).map_err(HsmError::crypto)?;
+                    let key_pair = rsa::KeyPair::from_pkcs8(private_pem.as_bytes())
+                        .map_err(HsmError::crypto)?;
                     let mut signature = vec![0; key_pair.public_modulus_len()];
                     let rng = aws_lc_rs::rand::SystemRandom::new();
-                    key_pair.sign(&signature::RSA_PKCS1_SHA256, &rng, &payload, &mut signature).map_err(HsmError::crypto)?;
+                    key_pair
+                        .sign(&signature::RSA_PKCS1_SHA256, &rng, &payload, &mut signature)
+                        .map_err(HsmError::crypto)?;
                     Ok(KeyOperationResult::Signature { signature })
                 }
                 KeyMaterial::Ec { private_pem, .. } => {
@@ -718,11 +733,18 @@ impl CryptoEngine {
                 KeyMaterial::Rsa { public_pem, .. } => {
                     let der = {
                         let lines: Vec<&str> = public_pem.lines().collect();
-                        if lines.len() < 3 { return Err(HsmError::crypto("Invalid PEM")) }
-                        let base64 = lines[1..lines.len()-1].join("");
-                        base64::decode(base64).map_err(HsmError::crypto)?
+                        if lines.len() < 3 {
+                            return Err(HsmError::crypto("Invalid PEM"));
+                        }
+                        let base64 = lines[1..lines.len() - 1].join("");
+                        general_purpose::STANDARD
+                            .decode(base64)
+                            .map_err(HsmError::crypto)?
                     };
-                    let public_key = signature::UnparsedPublicKey::new(&signature::RSA_PKCS1_2048_8192_SHA256, &der);
+                    let public_key = signature::UnparsedPublicKey::new(
+                        &signature::RSA_PKCS1_2048_8192_SHA256,
+                        &der,
+                    );
                     let valid = public_key.verify(&payload, &signature).is_ok();
                     Ok(KeyOperationResult::Verified { valid })
                 }
@@ -1104,7 +1126,7 @@ impl CryptoEngine {
             } => {
                 let combined =
                     serde_json::to_vec(&(private_pem, public_pem)).map_err(HsmError::crypto)?;
-                Ok((curve.clone(), combined))
+                Ok((*curve, combined))
             }
             KeyMaterial::PostQuantum {
                 algorithm,
@@ -1158,7 +1180,7 @@ impl CryptoEngine {
                 let (private_pem, public_pem): (String, String) =
                     serde_json::from_slice(bytes).map_err(HsmError::crypto)?;
                 Ok(KeyMaterial::Ec {
-                    curve: material_type.clone(),
+                    curve: *material_type,
                     private_pem,
                     public_pem,
                 })
@@ -1213,8 +1235,11 @@ fn rsa_material_aws(key_pair: rsa::KeyPair) -> HsmResult<KeyMaterial> {
     let public_key = key_pair.public_key();
     let public_der = public_key.as_der().map_err(HsmError::crypto)?;
     let public_pem = {
-        let base64 = base64::encode(public_der.as_ref());
-        format!("-----BEGIN PUBLIC KEY-----\n{}\n-----END PUBLIC KEY-----\n", base64)
+        let base64 = general_purpose::STANDARD.encode(public_der.as_ref());
+        format!(
+            "-----BEGIN PUBLIC KEY-----\n{}\n-----END PUBLIC KEY-----\n",
+            base64
+        )
     };
     Ok(KeyMaterial::Rsa {
         private_pem,

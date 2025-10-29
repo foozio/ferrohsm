@@ -8,10 +8,10 @@ use std::{
 };
 
 use axum::http::HeaderMap;
-use base64::engine::general_purpose::STANDARD;
 use base64::Engine as _;
+use base64::engine::general_purpose::STANDARD;
 use hsm_core::{AuthContext, Role};
-use jsonwebtoken::{decode, decode_header, Algorithm, DecodingKey, Validation};
+use jsonwebtoken::{Algorithm, DecodingKey, Validation, decode, decode_header};
 use parking_lot::{Mutex, RwLock};
 use serde::Deserialize;
 use sha2::{Digest, Sha256};
@@ -131,7 +131,7 @@ impl AuthVerifier {
             }
         }
 
-        if let Some(_) = last_err {
+        if last_err.is_some() {
             // Log generic failure without exposing details
             error!("token validation failed");
         }
@@ -271,7 +271,7 @@ impl RuntimeConfig {
                 })
                 .collect()
         } else {
-            self.keys.iter().map(|k| Arc::clone(k)).collect()
+            self.keys.iter().map(Arc::clone).collect()
         }
     }
 }
@@ -349,7 +349,7 @@ impl TryFrom<&JwtConfig> for RuntimeConfig {
         let mut validation = Validation::new(algorithm);
         validation.validate_exp = true;
         if let Some(issuer) = &value.issuer {
-            validation.set_issuer(&[issuer.clone()]);
+            validation.set_issuer(std::slice::from_ref(issuer));
         }
         validation.leeway = value.leeway_seconds;
 

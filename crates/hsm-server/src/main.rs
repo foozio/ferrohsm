@@ -12,34 +12,33 @@ use std::{
 };
 
 use axum::{
+    Json, Router,
     body::Body,
-    extract::{connect_info::ConnectInfo, Path as AxumPath, Query, State},
-    http::{header::CONTENT_TYPE, HeaderMap, StatusCode},
+    extract::{Path as AxumPath, Query, State, connect_info::ConnectInfo},
+    http::{HeaderMap, StatusCode, header::CONTENT_TYPE},
     response::{IntoResponse, Redirect, Response},
     routing::{get, post},
-    Json, Router,
 };
-use tokio::net::TcpListener;
-use base64::{engine::general_purpose::STANDARD as B64, Engine as _};
+use base64::{Engine as _, engine::general_purpose::STANDARD as B64};
 use clap::{Parser, ValueEnum};
 use metrics_exporter_prometheus::{PrometheusBuilder, PrometheusHandle};
 use parking_lot::Mutex;
 use serde::{Deserialize, Serialize};
 use tera::Tera;
-use time::{format_description::well_known::Rfc3339, Duration as TimeDuration, OffsetDateTime};
+use time::{Duration as TimeDuration, OffsetDateTime, format_description::well_known::Rfc3339};
 use tokio::{signal, time::MissedTickBehavior};
 use tower_http::{services::ServeDir, trace::TraceLayer};
-use tracing::{error, info, Level};
+use tracing::{Level, error, info};
 use uuid::Uuid;
 
 use crate::tls::TlsSetup;
 use auth::AuthVerifier;
 use hsm_core::{
-    retention::RetentionLedger, storage::FileKeyStore, ApprovalStore, AuditEvent, AuditLog,
-    AuthContext, DefaultPolicyEngine, FileApprovalStore, FileAuditLog, HsmError, KeyAlgorithm,
-    KeyGenerationRequest, KeyManager, KeyState, KeyStore, KeyUsage, OperationContext,
-    PendingApprovalInfo, PolicyEngine, RbacAuthorizer, Role, SqliteApprovalStore, SqliteAuditLog,
-    SqliteKeyStore, TamperStatus,
+    ApprovalStore, AuditEvent, AuditLog, AuthContext, DefaultPolicyEngine, FileApprovalStore,
+    FileAuditLog, HsmError, KeyAlgorithm, KeyGenerationRequest, KeyManager, KeyState, KeyStore,
+    KeyUsage, OperationContext, PendingApprovalInfo, PolicyEngine, RbacAuthorizer, Role,
+    SqliteApprovalStore, SqliteAuditLog, SqliteKeyStore, TamperStatus, retention::RetentionLedger,
+    storage::FileKeyStore,
 };
 use retention::RetentionScheduler;
 
@@ -618,19 +617,19 @@ impl CacheStore {
             return Some(value);
         }
 
-        if self.map.remove(key).is_some() {
-            if let Some(pos) = self.order.iter().position(|existing| existing == key) {
-                self.order.remove(pos);
-            }
+        if self.map.remove(key).is_some()
+            && let Some(pos) = self.order.iter().position(|existing| existing == key)
+        {
+            self.order.remove(pos);
         }
         None
     }
 
     fn insert(&mut self, key: KeyCacheKey, value: PaginatedKeys, max_entries: usize) {
-        if self.map.contains_key(&key) {
-            if let Some(pos) = self.order.iter().position(|existing| existing == &key) {
-                self.order.remove(pos);
-            }
+        if self.map.contains_key(&key)
+            && let Some(pos) = self.order.iter().position(|existing| existing == &key)
+        {
+            self.order.remove(pos);
         }
         self.order.push_back(key.clone());
         self.map.insert(
@@ -806,7 +805,7 @@ async fn main() -> anyhow::Result<()> {
         });
     }
 
-    let app = Router::new()
+    let router = Router::new()
         .route("/healthz", get(health))
         .route("/metrics", get(metrics_endpoint))
         .route("/api/v1/keys", get(list_keys).post(create_key))
@@ -826,22 +825,49 @@ async fn main() -> anyhow::Result<()> {
         .route("/ui", get(render_dashboard))
         .route("/ui/approvals/:id/approve", post(approve_approval_ui))
         .route("/ui/approvals/:id/deny", post(deny_approval_ui))
-        .nest_service("/static", ServeDir::new("web/static"))
+        .nest_service("/static", ServeDir::new("web/static"));
+
+    let app = pqc::register_routes(router)
         .with_state(state.clone())
         .layer(TraceLayer::new_for_http());
 
-    // Register PQC-specific routes
-    // let app = pqc::register_routes(app);
-
     let tls_setup = crate::tls::configure(&args).await?;
+    let server_handle = axum_server::Handle::new();
+
     info!(mode = ?args.tls_mode, "FerroHSM listening on https://{}", args.bind);
 
-    let listener = TcpListener::bind(args.bind).await?;
-    
-    axum::serve(listener, app)
-        .with_graceful_shutdown(shutdown_signal())
-        .await?;
-    
+    match (tls_setup, app) {
+        (TlsSetup::Manual(config), app) => {
+            let shutdown_handle = server_handle.clone();
+            let server = axum_server::bind_rustls(args.bind, config)
+                .handle(server_handle)
+                .serve(app.into_make_service_with_connect_info::<SocketAddr>());
+            tokio::pin!(server);
+            tokio::select! {
+                result = &mut server => result?,
+                _ = shutdown_signal() => {
+                    shutdown_handle.graceful_shutdown(None);
+                    server.await?;
+                }
+            }
+        }
+        (TlsSetup::Acme { acceptor }, app) => {
+            let shutdown_handle = server_handle.clone();
+            let server = axum_server::Server::bind(args.bind)
+                .acceptor(acceptor)
+                .handle(server_handle)
+                .serve(app.into_make_service_with_connect_info::<SocketAddr>());
+            tokio::pin!(server);
+            tokio::select! {
+                result = &mut server => result?,
+                _ = shutdown_signal() => {
+                    shutdown_handle.graceful_shutdown(None);
+                    server.await?;
+                }
+            }
+        }
+    }
+
     Ok(())
 }
 
@@ -880,9 +906,8 @@ struct HealthResponse {
 
 async fn health<P: PolicyEngine>(
     State(state): State<AppState<P>>,
-    headers: HeaderMap,
 ) -> Result<Json<HealthResponse>, AppError> {
-    let _ = authenticate_request(&state, &headers, "127.0.0.1".parse().unwrap())?;
+    info!("Health check called");
     let stats = state.rate_limiter.stats();
     let uptime_seconds = state.startup.elapsed().as_secs();
     Ok(Json(HealthResponse {

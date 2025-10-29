@@ -1,8 +1,8 @@
 use crate::{Args, TlsMode};
-use anyhow::{anyhow, bail, Context, Result};
+use anyhow::{Context, Result, anyhow, bail};
 use axum_server::tls_rustls::RustlsConfig;
-use base64::engine::general_purpose::URL_SAFE_NO_PAD;
 use base64::Engine as _;
+use base64::engine::general_purpose::URL_SAFE_NO_PAD;
 use futures::StreamExt;
 use hex::encode as hex_encode;
 use num_bigint::BigUint;
@@ -12,11 +12,11 @@ use rustls::crypto::ring::sign::any_supported_type;
 use rustls::pki_types::{CertificateDer, PrivateKeyDer};
 use rustls::server::{ClientHello, ResolvesServerCert, WebPkiClientVerifier};
 use rustls::sign::CertifiedKey;
+use rustls_acme::AcmeConfig;
 use rustls_acme::acme::ACME_TLS_ALPN_NAME;
 use rustls_acme::acme::{LETS_ENCRYPT_PRODUCTION_DIRECTORY, LETS_ENCRYPT_STAGING_DIRECTORY};
 use rustls_acme::caches::DirCache;
 use rustls_acme::is_tls_alpn_challenge;
-use rustls_acme::AcmeConfig;
 use sha1::{Digest as Sha1Digest, Sha1};
 use sha2::Sha256;
 use std::fs::File;
@@ -102,10 +102,10 @@ impl HybridAcmeResolver {
 
 impl ResolvesServerCert for HybridAcmeResolver {
     fn resolve(&self, client_hello: ClientHello<'_>) -> Option<Arc<CertifiedKey>> {
-        if !is_tls_alpn_challenge(&client_hello) {
-            if let Some(cert) = self.manual.current() {
-                return Some(cert);
-            }
+        if !is_tls_alpn_challenge(&client_hello)
+            && let Some(cert) = self.manual.current()
+        {
+            return Some(cert);
         }
         self.acme.resolve(client_hello)
     }
@@ -466,8 +466,7 @@ fn spawn_manual_reload(
                         ocsp,
                     } = next;
                     let changed_cert = fingerprint.as_slice() != last_fingerprint.as_slice();
-                    let changed_ocsp =
-                        ocsp.as_ref().map(Vec::as_slice) != last_ocsp.as_ref().map(Vec::as_slice);
+                    let changed_ocsp = ocsp.as_deref() != last_ocsp.as_deref();
                     if changed_cert || changed_ocsp {
                         resolver.replace(certified);
                         last_fingerprint = fingerprint;
@@ -504,7 +503,7 @@ fn apply_loaded_key(
     let (changed_cert, changed_ocsp) = match guard.as_ref() {
         Some(current) => (
             current.fingerprint != next.fingerprint,
-            current.ocsp.as_ref().map(Vec::as_slice) != next.ocsp.as_ref().map(Vec::as_slice),
+            current.ocsp.as_deref() != next.ocsp.as_deref(),
         ),
         None => (true, next.ocsp.is_some()),
     };
@@ -526,7 +525,7 @@ fn acme_cached_cert_path(cache_dir: &Path, domains: &[String], directory_url: &s
     let mut hasher = Sha256::new();
     for domain in domains {
         hasher.update(domain.as_bytes());
-        hasher.update(&[0]);
+        hasher.update([0]);
     }
     hasher.update(directory_url.as_bytes());
     let hash = URL_SAFE_NO_PAD.encode(hasher.finalize());
@@ -547,7 +546,7 @@ async fn load_cached_acme_cert(
             return Err(anyhow!(
                 "failed to read cached ACME certificate {}: {err}",
                 path.display()
-            ))
+            ));
         }
     };
 
@@ -684,10 +683,10 @@ fn extract_ocsp_url(cert: &x509_parser::certificate::X509Certificate<'_>) -> Opt
                 access_location,
             } in &aia.accessdescs
             {
-                if access_method.as_bytes() == OCSP_METHOD_OID {
-                    if let GeneralName::URI(uri) = access_location {
-                        return Some((*uri).to_string());
-                    }
+                if access_method.as_bytes() == OCSP_METHOD_OID
+                    && let GeneralName::URI(uri) = access_location
+                {
+                    return Some((*uri).to_string());
                 }
             }
         }

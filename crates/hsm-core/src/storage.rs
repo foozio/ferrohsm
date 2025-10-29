@@ -6,14 +6,14 @@ use std::{
 };
 
 use fs2::FileExt;
-use rand::{rngs::OsRng, RngCore};
+use rand::{RngCore, rngs::OsRng};
 use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
 
 use crate::attributes::AttributeSet;
 
 use parking_lot::{Mutex as ParkingMutex, RwLock};
-use rusqlite::{params, Connection, OptionalExtension};
+use rusqlite::{Connection, OptionalExtension, params};
 
 use crate::{
     attributes::{AttributeId, AttributeTemplate, AttributeValue},
@@ -123,11 +123,11 @@ impl FileKeyStore {
         let mut highest = None;
         for entry in fs::read_dir(&key_dir).map_err(HsmError::storage)? {
             let entry = entry.map_err(HsmError::storage)?;
-            if entry.file_type().map_err(HsmError::storage)?.is_file() {
-                if let Some(version) = Self::parse_version(entry.path()) {
-                    let next = highest.map_or(version, |curr: u32| curr.max(version));
-                    highest = Some(next);
-                }
+            if entry.file_type().map_err(HsmError::storage)?.is_file()
+                && let Some(version) = Self::parse_version(entry.path())
+            {
+                let next = highest.map_or(version, |curr: u32| curr.max(version));
+                highest = Some(next);
             }
         }
         Ok(highest)
@@ -159,10 +159,10 @@ impl FileKeyStore {
         let mut results = Vec::new();
 
         for (key_id, version) in candidates {
-            if let Ok(record) = self.fetch_version(&key_id, version) {
-                if record.metadata.attributes.matches_template(template) {
-                    results.push(record);
-                }
+            if let Ok(record) = self.fetch_version(&key_id, version)
+                && record.metadata.attributes.matches_template(template)
+            {
+                results.push(record);
             }
         }
         Ok(results)
@@ -255,15 +255,15 @@ impl KeyStore for FileKeyStore {
             .collect::<Vec<_>>();
         entries.sort_by_key(|entry| entry.path());
         for entry in entries {
-            if entry.file_type().map_err(HsmError::storage)?.is_file() {
-                if entry.file_name() == "current.json" {
-                    continue;
-                }
-                if Self::parse_version(entry.path()).is_some() {
-                    if let Ok(record) = Self::read_record(&entry.path()) {
-                        versions.push(record);
-                    }
-                }
+            if !entry.file_type().map_err(HsmError::storage)?.is_file()
+                || entry.file_name() == "current.json"
+            {
+                continue;
+            }
+            if Self::parse_version(entry.path()).is_some()
+                && let Ok(record) = Self::read_record(&entry.path())
+            {
+                versions.push(record);
             }
         }
         versions.sort_by_key(|record| record.metadata.version);
@@ -398,7 +398,7 @@ impl MemoryKeyStore {
         Self::default()
     }
 
-    fn ensure_sequence(existing: &Vec<KeyRecord>, candidate: &KeyRecord) -> HsmResult<()> {
+    fn ensure_sequence(existing: &[KeyRecord], candidate: &KeyRecord) -> HsmResult<()> {
         if let Some(last) = existing.last() {
             if candidate.metadata.version > last.metadata.version + 1 {
                 return Err(HsmError::invalid(format!(
@@ -446,12 +446,11 @@ impl MemoryKeyStore {
 
         let mut results = Vec::new();
         for (key_id, version) in candidates {
-            if let Some(versions) = map.get(&key_id) {
-                if let Some(record) = versions.iter().find(|rec| rec.metadata.version == version) {
-                    if record.metadata.attributes.matches_template(template) {
-                        results.push(record.clone());
-                    }
-                }
+            if let Some(versions) = map.get(&key_id)
+                && let Some(record) = versions.iter().find(|rec| rec.metadata.version == version)
+                && record.metadata.attributes.matches_template(template)
+            {
+                results.push(record.clone());
             }
         }
 
@@ -463,9 +462,9 @@ impl KeyStore for MemoryKeyStore {
     fn store(&self, record: KeyRecord) -> HsmResult<()> {
         let mut map = self.records.write();
         let entry = map.entry(record.metadata.id.clone()).or_default();
-        Self::ensure_sequence(entry, &record)?;
+        Self::ensure_sequence(entry.as_slice(), &record)?;
         entry.push(record);
-        self.rebuild_index(&*map);
+        self.rebuild_index(&map);
         Ok(())
     }
 
@@ -511,7 +510,7 @@ impl KeyStore for MemoryKeyStore {
     fn delete(&self, id: &KeyId) -> HsmResult<()> {
         let mut map = self.records.write();
         map.remove(id);
-        self.rebuild_index(&*map);
+        self.rebuild_index(&map);
         Ok(())
     }
 
@@ -530,7 +529,7 @@ impl KeyStore for MemoryKeyStore {
             .find(|rec| rec.metadata.version == record.metadata.version)
         {
             *existing = record;
-            self.rebuild_index(&*map);
+            self.rebuild_index(&map);
             Ok(())
         } else {
             Err(HsmError::KeyNotFound(format!(
@@ -545,10 +544,10 @@ impl KeyStore for MemoryKeyStore {
         let versions = map
             .get_mut(id)
             .ok_or_else(|| HsmError::KeyNotFound(id.to_string()))?;
-        if let Some(active) = versions.last() {
-            if active.metadata.version == version {
-                return Err(HsmError::invalid("cannot purge active key version"));
-            }
+        if let Some(active) = versions.last()
+            && active.metadata.version == version
+        {
+            return Err(HsmError::invalid("cannot purge active key version"));
         }
 
         let index = versions
@@ -556,7 +555,7 @@ impl KeyStore for MemoryKeyStore {
             .position(|rec| rec.metadata.version == version)
             .ok_or_else(|| HsmError::KeyNotFound(format!("{id}@v{version}")))?;
         let record = versions.remove(index);
-        self.rebuild_index(&*map);
+        self.rebuild_index(&map);
         let mut buffer = vec![0u8; record.sealed.ciphertext.len()];
         OsRng.fill_bytes(&mut buffer);
         let mut hasher = Sha256::new();
@@ -649,10 +648,10 @@ impl SqliteKeyStore {
 
         let mut results = Vec::new();
         for (key_id, version) in candidates {
-            if let Ok(record) = self.fetch_version(&key_id, version) {
-                if record.metadata.attributes.matches_template(template) {
-                    results.push(record);
-                }
+            if let Ok(record) = self.fetch_version(&key_id, version)
+                && record.metadata.attributes.matches_template(template)
+            {
+                results.push(record);
             }
         }
         Ok(results)
@@ -922,10 +921,10 @@ impl<V: RemoteKeyVault> KeyStore for RemoteKeyStore<V> {
     }
 
     fn purge_version(&self, id: &KeyId, version: u32) -> HsmResult<PurgeReport> {
-        if let Some(active) = self.backend.get_latest(id)? {
-            if active.metadata.version == version {
-                return Err(HsmError::invalid("cannot purge active key version"));
-            }
+        if let Some(active) = self.backend.get_latest(id)?
+            && active.metadata.version == version
+        {
+            return Err(HsmError::invalid("cannot purge active key version"));
         }
         self.backend.delete_version(id, version)?;
         Ok(PurgeReport {

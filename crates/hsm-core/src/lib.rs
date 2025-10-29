@@ -29,7 +29,7 @@ pub use approvals::{
 };
 pub use attributes::{AttributeId, AttributeSet, AttributeTemplate, AttributeValue};
 pub use audit::{
-    compute_event_hash, AuditEvent, AuditLog, AuditRecord, AuditSink, FileAuditLog, SqliteAuditLog,
+    AuditEvent, AuditLog, AuditRecord, AuditSink, FileAuditLog, SqliteAuditLog, compute_event_hash,
 };
 pub use crypto::{CryptoEngine, CryptoOperation, KeyOperationResult};
 pub use error::{HsmError, HsmResult};
@@ -156,8 +156,10 @@ where
 
     /// List metadata for all keys subject to policy constraints.
     pub fn list_keys(&self, ctx: &AuthContext) -> HsmResult<Vec<KeyMetadata>> {
-        let mut query = KeyListQuery::default();
-        query.per_page = u32::MAX;
+        let query = KeyListQuery {
+            per_page: u32::MAX,
+            ..Default::default()
+        };
         let page = self.list_keys_with_query(ctx, &query)?;
         Ok(page.items)
     }
@@ -190,16 +192,16 @@ where
             }
 
             let metadata = record.metadata.clone();
-            if let Some(algorithm) = query.algorithm {
-                if metadata.algorithm != algorithm {
-                    continue;
-                }
+            if let Some(algorithm) = query.algorithm
+                && metadata.algorithm != algorithm
+            {
+                continue;
             }
 
-            if let Some(ref state) = query.state {
-                if &metadata.state != state {
-                    continue;
-                }
+            if let Some(ref state) = query.state
+                && &metadata.state != state
+            {
+                continue;
             }
 
             if !tags.is_empty() {
@@ -221,7 +223,7 @@ where
         let per_page = if query.per_page == u32::MAX {
             filtered.len().max(1)
         } else {
-            query.per_page.max(1).min(1000) as usize
+            query.per_page.clamp(1, 1000) as usize
         };
         let page_index = if query.page == 0 { 0 } else { query.page - 1 } as usize;
         let total = filtered.len();
@@ -259,7 +261,7 @@ where
 
         // Apply PQC-specific policy controls if applicable
         if record.metadata.algorithm.is_post_quantum() || record.metadata.algorithm.is_hybrid() {
-            let pqc_controller = PqcPolicyController::default();
+            let pqc_controller = PqcPolicyController;
 
             // Check if the user is authorized to use this PQC algorithm
             if !pqc_controller.is_authorized(ctx, &record.metadata.algorithm) {
@@ -494,10 +496,10 @@ where
             return Ok(());
         }
 
-        if decision.quorum_required {
-            if let Some(approval_id) = decision.approval_id {
-                return Err(HsmError::ApprovalRequired { approval_id });
-            }
+        if decision.quorum_required
+            && let Some(approval_id) = decision.approval_id
+        {
+            return Err(HsmError::ApprovalRequired { approval_id });
         }
 
         Err(HsmError::PolicyDenied)

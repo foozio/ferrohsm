@@ -100,10 +100,10 @@ impl RetentionPolicy {
         let mut duration = self.default;
 
         for tag in &metadata.policy_tags {
-            if let Some(tag_duration) = self.tags.get(tag) {
-                if *tag_duration > duration {
-                    duration = *tag_duration;
-                }
+            if let Some(tag_duration) = self.tags.get(tag)
+                && *tag_duration > duration
+            {
+                duration = *tag_duration;
             }
         }
 

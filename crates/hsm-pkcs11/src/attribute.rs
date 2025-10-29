@@ -5,11 +5,10 @@
 //! key metadata and material types.
 
 use cryptoki_sys::{
-    CKA_CLASS, CKA_DECRYPT, CKA_DERIVE, CKA_ENCRYPT, CKA_EXTRACTABLE, CKA_ID, CKA_KEY_TYPE,
-    CKA_LABEL, CKA_MODIFIABLE, CKA_PRIVATE, CKA_SENSITIVE, CKA_SIGN, CKA_TOKEN,
-    CKA_UNWRAP, CKA_VALUE_LEN, CKA_VERIFY, CKA_WRAP, CKK_AES, CKK_EC, CKK_RSA,
-    CKO_PRIVATE_KEY, CKO_PUBLIC_KEY, CKO_SECRET_KEY, CK_ATTRIBUTE_TYPE, CK_BBOOL,
-    CK_OBJECT_CLASS, CK_ULONG,
+    CK_ATTRIBUTE_TYPE, CK_OBJECT_CLASS, CK_ULONG, CKA_CLASS, CKA_DECRYPT, CKA_DERIVE, CKA_ENCRYPT,
+    CKA_EXTRACTABLE, CKA_ID, CKA_KEY_TYPE, CKA_MODIFIABLE, CKA_PRIVATE, CKA_SENSITIVE, CKA_SIGN,
+    CKA_TOKEN, CKA_UNWRAP, CKA_VALUE_LEN, CKA_VERIFY, CKA_WRAP, CKK_AES, CKK_EC, CKK_RSA,
+    CKO_PRIVATE_KEY, CKO_SECRET_KEY,
 };
 use hsm_core::models::{KeyAlgorithm, KeyMaterial, KeyMaterialType, KeyMetadata};
 
@@ -17,7 +16,6 @@ use hsm_core::models::{KeyAlgorithm, KeyMaterial, KeyMaterialType, KeyMetadata};
 use hsm_core::pqc::{MlDsaSecurityLevel, MlKemSecurityLevel, SlhDsaSecurityLevel};
 
 use std::collections::HashMap;
-
 
 // Define custom key types for post-quantum algorithms
 // Note: These values are in the vendor-defined range (0x80000000 - 0xFFFFFFFF)
@@ -184,7 +182,9 @@ pub fn create_base_key_attributes(metadata: &KeyMetadata, material: &KeyMaterial
     );
     attrs.set(
         CKA_KEY_TYPE,
-        AttributeValue::Ulong(key_material_type_to_key_type(&key_algorithm_to_material_type(&metadata.algorithm))),
+        AttributeValue::Ulong(key_material_type_to_key_type(
+            &key_algorithm_to_material_type(&metadata.algorithm),
+        )),
     );
     // attrs.set(CKA_LABEL, AttributeValue::String(metadata.name.clone()));
     attrs.set(
@@ -224,20 +224,26 @@ pub fn create_base_key_attributes(metadata: &KeyMetadata, material: &KeyMaterial
             attrs.set(CKA_SIGN, AttributeValue::Bool(true));
             attrs.set(CKA_VERIFY, AttributeValue::Bool(true));
         }
-        KeyAlgorithm::SlhDsa128f | KeyAlgorithm::SlhDsa128s | KeyAlgorithm::SlhDsa192f | 
-        KeyAlgorithm::SlhDsa192s | KeyAlgorithm::SlhDsa256f | KeyAlgorithm::SlhDsa256s => {
+        KeyAlgorithm::SlhDsa128f
+        | KeyAlgorithm::SlhDsa128s
+        | KeyAlgorithm::SlhDsa192f
+        | KeyAlgorithm::SlhDsa192s
+        | KeyAlgorithm::SlhDsa256f
+        | KeyAlgorithm::SlhDsa256s => {
             attrs.set(CKA_SIGN, AttributeValue::Bool(true));
             attrs.set(CKA_VERIFY, AttributeValue::Bool(true));
         }
         // Hybrid algorithms
-        KeyAlgorithm::HybridP256MlKem512 | KeyAlgorithm::HybridP256MlKem768 | 
-        KeyAlgorithm::HybridP384MlKem1024 => {
+        KeyAlgorithm::HybridP256MlKem512
+        | KeyAlgorithm::HybridP256MlKem768
+        | KeyAlgorithm::HybridP384MlKem1024 => {
             attrs.set(CKA_ENCRYPT, AttributeValue::Bool(true));
             attrs.set(CKA_DECRYPT, AttributeValue::Bool(true));
             attrs.set(CKA_DERIVE, AttributeValue::Bool(true));
         }
-        KeyAlgorithm::HybridP256MlDsa44 | KeyAlgorithm::HybridP256MlDsa65 | 
-        KeyAlgorithm::HybridP384MlDsa87 => {
+        KeyAlgorithm::HybridP256MlDsa44
+        | KeyAlgorithm::HybridP256MlDsa65
+        | KeyAlgorithm::HybridP384MlDsa87 => {
             attrs.set(CKA_SIGN, AttributeValue::Bool(true));
             attrs.set(CKA_VERIFY, AttributeValue::Bool(true));
         }
@@ -293,12 +299,12 @@ fn ml_dsa_security_level_to_ulong(level: MlDsaSecurityLevel) -> CK_ULONG {
 #[cfg(feature = "pqc")]
 fn slh_dsa_security_level_to_ulong(level: SlhDsaSecurityLevel) -> CK_ULONG {
     match level {
-        SlhDsaSecurityLevel::SlhDsa128f => 1281,
-        SlhDsaSecurityLevel::SlhDsa128s => 1282,
-        SlhDsaSecurityLevel::SlhDsa192f => 1921,
-        SlhDsaSecurityLevel::SlhDsa192s => 1922,
-        SlhDsaSecurityLevel::SlhDsa256f => 2561,
-        SlhDsaSecurityLevel::SlhDsa256s => 2562,
+        SlhDsaSecurityLevel::SlhDsaSha2128f => 1281,
+        SlhDsaSecurityLevel::SlhDsaSha2128s => 1282,
+        SlhDsaSecurityLevel::SlhDsaSha2192f => 1921,
+        SlhDsaSecurityLevel::SlhDsaSha2192s => 1922,
+        SlhDsaSecurityLevel::SlhDsaSha2256f => 2561,
+        SlhDsaSecurityLevel::SlhDsaSha2256s => 2562,
     }
 }
 

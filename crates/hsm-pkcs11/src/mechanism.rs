@@ -5,17 +5,14 @@
 //! internal cryptographic operations.
 
 use cryptoki_sys::{
-    CKM_AES_CBC, CKM_AES_CBC_PAD, CKM_AES_GCM, CKM_AES_KEY_GEN, CKM_ECDSA, CKM_ECDSA_SHA256,
-    CKM_ECDSA_SHA384, CKM_EC_KEY_PAIR_GEN, CKM_RSA_PKCS, CKM_RSA_PKCS_KEY_PAIR_GEN,
-    CKM_SHA256_RSA_PKCS, CKM_SHA384_RSA_PKCS, CKM_SHA512_RSA_PKCS, CK_MECHANISM_TYPE,
+    CK_MECHANISM_TYPE, CKM_AES_CBC, CKM_AES_CBC_PAD, CKM_AES_GCM, CKM_AES_KEY_GEN,
+    CKM_EC_KEY_PAIR_GEN, CKM_ECDSA, CKM_ECDSA_SHA256, CKM_ECDSA_SHA384, CKM_RSA_PKCS,
+    CKM_RSA_PKCS_KEY_PAIR_GEN, CKM_SHA256_RSA_PKCS, CKM_SHA384_RSA_PKCS, CKM_SHA512_RSA_PKCS,
 };
-use hsm_core::{
-    models::{KeyAlgorithm, KeyMaterialType},
-};
+use hsm_core::models::{KeyAlgorithm, KeyMaterialType};
 
 #[cfg(feature = "pqc")]
 use hsm_core::pqc::{MlDsaSecurityLevel, MlKemSecurityLevel, SlhDsaSecurityLevel};
-use std::collections::HashMap;
 use tracing::debug;
 
 // Define custom mechanism types for post-quantum algorithms
@@ -206,12 +203,12 @@ pub fn slh_dsa_mechanism_to_security_level(
     mechanism: CK_MECHANISM_TYPE,
 ) -> Option<SlhDsaSecurityLevel> {
     match mechanism {
-        CKM_SLH_DSA_SHA2_128F => Some(SlhDsaSecurityLevel::SlhDsa128f),
-        CKM_SLH_DSA_SHA2_128S => Some(SlhDsaSecurityLevel::SlhDsa128s),
-        CKM_SLH_DSA_SHA2_192F => Some(SlhDsaSecurityLevel::SlhDsa192f),
-        CKM_SLH_DSA_SHA2_192S => Some(SlhDsaSecurityLevel::SlhDsa192s),
-        CKM_SLH_DSA_SHA2_256F => Some(SlhDsaSecurityLevel::SlhDsa256f),
-        CKM_SLH_DSA_SHA2_256S => Some(SlhDsaSecurityLevel::SlhDsa256s),
+        CKM_SLH_DSA_SHA2_128F => Some(SlhDsaSecurityLevel::SlhDsaSha2128f),
+        CKM_SLH_DSA_SHA2_128S => Some(SlhDsaSecurityLevel::SlhDsaSha2128s),
+        CKM_SLH_DSA_SHA2_192F => Some(SlhDsaSecurityLevel::SlhDsaSha2192f),
+        CKM_SLH_DSA_SHA2_192S => Some(SlhDsaSecurityLevel::SlhDsaSha2192s),
+        CKM_SLH_DSA_SHA2_256F => Some(SlhDsaSecurityLevel::SlhDsaSha2256f),
+        CKM_SLH_DSA_SHA2_256S => Some(SlhDsaSecurityLevel::SlhDsaSha2256s),
         _ => None,
     }
 }

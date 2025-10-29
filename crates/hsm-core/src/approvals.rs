@@ -2,9 +2,9 @@ use std::path::{Path, PathBuf};
 
 use fs2::FileExt;
 use parking_lot::Mutex;
-use rusqlite::{params, Connection, OptionalExtension};
+use rusqlite::{Connection, OptionalExtension, params};
 use serde::{Deserialize, Serialize};
-use time::{format_description::well_known::Rfc3339, OffsetDateTime};
+use time::{OffsetDateTime, format_description::well_known::Rfc3339};
 use uuid::Uuid;
 
 use crate::{
@@ -145,14 +145,12 @@ impl ApprovalStore for FileApprovalStore {
         let mut records = Vec::new();
         for entry in std::fs::read_dir(&self.dir).map_err(HsmError::storage)? {
             let entry = entry.map_err(HsmError::storage)?;
-            if entry.file_type().map_err(HsmError::storage)?.is_file() {
-                if let Some(stem) = entry.path().file_stem().and_then(|s| s.to_str()) {
-                    if let Ok(id) = Uuid::parse_str(stem) {
-                        if let Some(record) = self.fetch(&id)? {
-                            records.push(record);
-                        }
-                    }
-                }
+            if entry.file_type().map_err(HsmError::storage)?.is_file()
+                && let Some(stem) = entry.path().file_stem().and_then(|s| s.to_str())
+                && let Ok(id) = Uuid::parse_str(stem)
+                && let Some(record) = self.fetch(&id)?
+            {
+                records.push(record);
             }
         }
         Ok(records)

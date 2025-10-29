@@ -5,21 +5,21 @@ use std::{
     time::Duration,
 };
 
-use anyhow::{anyhow, bail, Context};
-use base64::{engine::general_purpose::STANDARD as B64, Engine as _};
+use anyhow::{Context, anyhow, bail};
+use base64::{Engine as _, engine::general_purpose::STANDARD as B64};
 use clap::{Parser, Subcommand, ValueEnum};
-use comfy_table::{presets::UTF8_FULL, Table};
+use comfy_table::{Table, presets::UTF8_FULL};
 use hsm_core::{
-    compute_event_hash, crypto::sign_audit_record, AuditEvent, KeyAlgorithm, KeyPurpose, KeyUsage,
+    AuditEvent, KeyAlgorithm, KeyPurpose, KeyUsage, compute_event_hash, crypto::sign_audit_record,
 };
-use jsonwebtoken::{encode, Algorithm, EncodingKey, Header};
+use jsonwebtoken::{Algorithm, EncodingKey, Header, encode};
 use reqwest::{
-    header::{HeaderMap, AUTHORIZATION},
     Client, Identity, StatusCode,
+    header::{AUTHORIZATION, HeaderMap},
 };
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
-use time::{format_description::well_known::Rfc3339, OffsetDateTime};
+use time::{OffsetDateTime, format_description::well_known::Rfc3339};
 
 #[derive(Parser, Debug)]
 #[command(
@@ -44,6 +44,10 @@ struct Cli {
     /// Custom CA bundle (PEM).
     #[arg(long)]
     ca_bundle: Option<PathBuf>,
+
+    /// Skip certificate verification (insecure, for development only).
+    #[arg(long)]
+    insecure: bool,
 
     /// Actor identifier propagated to the server.
     #[arg(long, default_value = "cli-operator")]
@@ -210,17 +214,12 @@ enum UsageArg {
     Unwrap,
 }
 
-#[derive(Clone, Copy, Debug, ValueEnum)]
+#[derive(Clone, Copy, Debug, Default, ValueEnum)]
 enum JwtAlgorithmArg {
+    #[default]
     Hs256,
     Rs256,
     Es256,
-}
-
-impl Default for JwtAlgorithmArg {
-    fn default() -> Self {
-        JwtAlgorithmArg::Hs256
-    }
 }
 
 impl From<UsageArg> for KeyPurpose {
@@ -334,6 +333,12 @@ async fn main() -> anyhow::Result<()> {
 
 fn build_client(cli: &Cli) -> anyhow::Result<Client> {
     let mut builder = Client::builder().timeout(Duration::from_secs(10));
+    
+    // Skip certificate verification if insecure flag is set
+    if cli.insecure {
+        builder = builder.danger_accept_invalid_certs(true);
+    }
+    
     if let (Some(cert_path), Some(key_path)) = (&cli.client_cert, &cli.client_key) {
         let cert = fs::read(cert_path)
             .with_context(|| format!("reading client cert {}", cert_path.display()))?;
@@ -359,6 +364,7 @@ fn auth_headers(token: &str) -> anyhow::Result<HeaderMap> {
     Ok(headers)
 }
 
+#[allow(clippy::too_many_arguments)]
 async fn list_keys(
     client: &Client,
     cli: &Cli,
@@ -411,6 +417,7 @@ async fn list_keys(
         "Usage",
         "Version",
         "Created",
+        "Tags",
     ]);
     for key in items {
         let created = key
@@ -423,6 +430,11 @@ async fn list_keys(
             .map(|u| format!("{:?}", u))
             .collect::<Vec<_>>()
             .join(",");
+        let tags_display = if key.policy_tags.is_empty() {
+            "-".to_string()
+        } else {
+            key.policy_tags.join(",")
+        };
         table.add_row(vec![
             key.id.clone(),
             format!("{:?}", key.algorithm),
@@ -430,6 +442,7 @@ async fn list_keys(
             usage,
             key.version.to_string(),
             created,
+            tags_display,
         ]);
     }
     println!("{table}");

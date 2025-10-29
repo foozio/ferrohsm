@@ -2,7 +2,7 @@ use serde::{Deserialize, Serialize};
 use time::{Duration, OffsetDateTime};
 use uuid::Uuid;
 
-use crate::{attributes::AttributeSet, rbac::Role, HsmError, HsmResult};
+use crate::{HsmError, HsmResult, attributes::AttributeSet, rbac::Role};
 
 pub type KeyId = String;
 
@@ -223,7 +223,7 @@ pub struct KeyGenerationRequest {
     pub description: Option<String>,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 pub enum KeyMaterialType {
     Symmetric,
     Rsa,
@@ -335,6 +335,12 @@ pub struct OperationContext {
 
 impl OperationContext {
     pub fn new() -> Self {
+        Self::default()
+    }
+}
+
+impl Default for OperationContext {
+    fn default() -> Self {
         Self {
             correlation_id: Uuid::new_v4(),
             associated_data: None,

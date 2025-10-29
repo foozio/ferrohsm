@@ -1,6 +1,5 @@
-use oqs::kem::{self as oqs_kem};
-use oqs::sig::{self as oqs_sig};
-use rand::{rngs::OsRng, RngCore};
+use oqs::kem::{self as oqs_kem, Algorithm as KemAlgorithm};
+use oqs::sig::{self as oqs_sig, Algorithm as SigAlgorithm};
 
 use crate::{
     error::{HsmError, HsmResult},
@@ -16,7 +15,19 @@ impl OqsCryptoProvider {
         Self
     }
 
-    fn get_mlkem_algorithm(&self, level: MlKemSecurityLevel) -> &'static str {
+    fn init() {
+        oqs::init();
+    }
+
+    fn mlkem_algorithm(level: MlKemSecurityLevel) -> KemAlgorithm {
+        match level {
+            MlKemSecurityLevel::MlKem512 => KemAlgorithm::Kyber512,
+            MlKemSecurityLevel::MlKem768 => KemAlgorithm::Kyber768,
+            MlKemSecurityLevel::MlKem1024 => KemAlgorithm::Kyber1024,
+        }
+    }
+
+    fn mlkem_name(level: MlKemSecurityLevel) -> &'static str {
         match level {
             MlKemSecurityLevel::MlKem512 => "ML-KEM-512",
             MlKemSecurityLevel::MlKem768 => "ML-KEM-768",
@@ -24,7 +35,15 @@ impl OqsCryptoProvider {
         }
     }
 
-    fn get_mldsa_algorithm(&self, level: MlDsaSecurityLevel) -> &'static str {
+    fn mldsa_algorithm(level: MlDsaSecurityLevel) -> SigAlgorithm {
+        match level {
+            MlDsaSecurityLevel::MlDsa44 => SigAlgorithm::Dilithium2,
+            MlDsaSecurityLevel::MlDsa65 => SigAlgorithm::Dilithium3,
+            MlDsaSecurityLevel::MlDsa87 => SigAlgorithm::Dilithium5,
+        }
+    }
+
+    fn mldsa_name(level: MlDsaSecurityLevel) -> &'static str {
         match level {
             MlDsaSecurityLevel::MlDsa44 => "ML-DSA-44",
             MlDsaSecurityLevel::MlDsa65 => "ML-DSA-65",
@@ -32,62 +51,73 @@ impl OqsCryptoProvider {
         }
     }
 
-    fn get_slhdsa_algorithm(&self, level: SlhDsaSecurityLevel) -> &'static str {
+    fn slhdsa_algorithm(level: SlhDsaSecurityLevel) -> SigAlgorithm {
         match level {
-            SlhDsaSecurityLevel::SlhDsaSha2128f => "SLH-DSA-SHA2-128f",
-            SlhDsaSecurityLevel::SlhDsaSha2128s => "SLH-DSA-SHA2-128s",
-            SlhDsaSecurityLevel::SlhDsaSha2192f => "SLH-DSA-SHA2-192f",
-            SlhDsaSecurityLevel::SlhDsaSha2192s => "SLH-DSA-SHA2-192s",
-            SlhDsaSecurityLevel::SlhDsaSha2256f => "SLH-DSA-SHA2-256f",
-            SlhDsaSecurityLevel::SlhDsaSha2256s => "SLH-DSA-SHA2-256s",
+            SlhDsaSecurityLevel::SlhDsaSha2128f => SigAlgorithm::SphincsSha2128fSimple,
+            SlhDsaSecurityLevel::SlhDsaSha2128s => SigAlgorithm::SphincsSha2128sSimple,
+            SlhDsaSecurityLevel::SlhDsaSha2192f => SigAlgorithm::SphincsSha2192fSimple,
+            SlhDsaSecurityLevel::SlhDsaSha2192s => SigAlgorithm::SphincsSha2192sSimple,
+            SlhDsaSecurityLevel::SlhDsaSha2256f => SigAlgorithm::SphincsSha2256fSimple,
+            SlhDsaSecurityLevel::SlhDsaSha2256s => SigAlgorithm::SphincsSha2256sSimple,
         }
+    }
+
+    fn slhdsa_variant(level: SlhDsaSecurityLevel) -> &'static str {
+        match level {
+            SlhDsaSecurityLevel::SlhDsaSha2128f => "SHA2-128f",
+            SlhDsaSecurityLevel::SlhDsaSha2128s => "SHA2-128s",
+            SlhDsaSecurityLevel::SlhDsaSha2192f => "SHA2-192f",
+            SlhDsaSecurityLevel::SlhDsaSha2192s => "SHA2-192s",
+            SlhDsaSecurityLevel::SlhDsaSha2256f => "SHA2-256f",
+            SlhDsaSecurityLevel::SlhDsaSha2256s => "SHA2-256s",
+        }
+    }
+
+    fn invalid_length(label: &str, expected: usize, actual: usize) -> HsmError {
+        HsmError::InvalidRequest(format!(
+            "invalid {label} length: expected {expected} bytes, got {actual}"
+        ))
+    }
+
+    fn kem_instance(level: MlKemSecurityLevel) -> HsmResult<oqs_kem::Kem> {
+        Self::init();
+        oqs_kem::Kem::new(Self::mlkem_algorithm(level))
+            .map_err(|e| HsmError::crypto(format!("Failed to initialize ML-KEM: {e}")))
+    }
+
+    fn sig_instance(algorithm: SigAlgorithm, label: &str) -> HsmResult<oqs_sig::Sig> {
+        Self::init();
+        oqs_sig::Sig::new(algorithm)
+            .map_err(|e| HsmError::crypto(format!("Failed to initialize {label}: {e}")))
     }
 }
 
 impl CryptoProvider for OqsCryptoProvider {
     fn generate_mlkem_keypair(&self, security_level: MlKemSecurityLevel) -> HsmResult<KeyMaterial> {
-        let alg_name = self.get_mlkem_algorithm(security_level);
-        let kem = oqs_kem::Kem::new(alg_name)
-            .map_err(|e| HsmError::crypto(format!("Failed to initialize ML-KEM: {}", e)))?;
+        let kem = Self::kem_instance(security_level)?;
 
         let (public_key, secret_key) = kem
             .keypair()
             .map_err(|e| HsmError::crypto(format!("Failed to generate ML-KEM keypair: {}", e)))?;
 
         Ok(KeyMaterial::PostQuantum {
-            public_key,
-            private_key: Some(secret_key),
-            algorithm: format!(
-                "ML-KEM-{}",
-                match security_level {
-                    MlKemSecurityLevel::MlKem512 => "512",
-                    MlKemSecurityLevel::MlKem768 => "768",
-                    MlKemSecurityLevel::MlKem1024 => "1024",
-                }
-            ),
+            public_key: public_key.into_vec(),
+            private_key: Some(secret_key.into_vec()),
+            algorithm: Self::mlkem_name(security_level).to_string(),
         })
     }
 
     fn generate_mldsa_keypair(&self, security_level: MlDsaSecurityLevel) -> HsmResult<KeyMaterial> {
-        let alg_name = self.get_mldsa_algorithm(security_level);
-        let sig = oqs_sig::Sig::new(alg_name)
-            .map_err(|e| HsmError::crypto(format!("Failed to initialize ML-DSA: {}", e)))?;
+        let sig = Self::sig_instance(Self::mldsa_algorithm(security_level), "ML-DSA")?;
 
         let (public_key, secret_key) = sig
             .keypair()
             .map_err(|e| HsmError::crypto(format!("Failed to generate ML-DSA keypair: {}", e)))?;
 
         Ok(KeyMaterial::PostQuantum {
-            public_key,
-            private_key: Some(secret_key),
-            algorithm: format!(
-                "ML-DSA-{}",
-                match security_level {
-                    MlDsaSecurityLevel::MlDsa44 => "44",
-                    MlDsaSecurityLevel::MlDsa65 => "65",
-                    MlDsaSecurityLevel::MlDsa87 => "87",
-                }
-            ),
+            public_key: public_key.into_vec(),
+            private_key: Some(secret_key.into_vec()),
+            algorithm: Self::mldsa_name(security_level).to_string(),
         })
     }
 
@@ -95,27 +125,16 @@ impl CryptoProvider for OqsCryptoProvider {
         &self,
         security_level: SlhDsaSecurityLevel,
     ) -> HsmResult<KeyMaterial> {
-        let alg_name = self.get_slhdsa_algorithm(security_level);
-        let sig = oqs_sig::Sig::new(alg_name)
-            .map_err(|e| HsmError::crypto(format!("Failed to initialize SLH-DSA: {}", e)))?;
+        let sig = Self::sig_instance(Self::slhdsa_algorithm(security_level), "SLH-DSA")?;
 
         let (public_key, secret_key) = sig
             .keypair()
             .map_err(|e| HsmError::crypto(format!("Failed to generate SLH-DSA keypair: {}", e)))?;
 
-        let variant = match security_level {
-            SlhDsaSecurityLevel::SlhDsaSha2128f => "SHA2-128f",
-            SlhDsaSecurityLevel::SlhDsaSha2128s => "SHA2-128s",
-            SlhDsaSecurityLevel::SlhDsaSha2192f => "SHA2-192f",
-            SlhDsaSecurityLevel::SlhDsaSha2192s => "SHA2-192s",
-            SlhDsaSecurityLevel::SlhDsaSha2256f => "SHA2-256f",
-            SlhDsaSecurityLevel::SlhDsaSha2256s => "SHA2-256s",
-        };
-
         Ok(KeyMaterial::PostQuantum {
-            public_key,
-            private_key: Some(secret_key),
-            algorithm: format!("SLH-DSA-{}", variant),
+            public_key: public_key.into_vec(),
+            private_key: Some(secret_key.into_vec()),
+            algorithm: format!("SLH-DSA-{}", Self::slhdsa_variant(security_level)),
         })
     }
 
@@ -124,15 +143,20 @@ impl CryptoProvider for OqsCryptoProvider {
         public_key: &[u8],
         security_level: MlKemSecurityLevel,
     ) -> HsmResult<(Vec<u8>, Vec<u8>)> {
-        let alg_name = self.get_mlkem_algorithm(security_level);
-        let kem = oqs_kem::Kem::new(alg_name)
-            .map_err(|e| HsmError::crypto(format!("Failed to initialize ML-KEM: {}", e)))?;
+        let kem = Self::kem_instance(security_level)?;
+        let pk_ref = kem.public_key_from_bytes(public_key).ok_or_else(|| {
+            Self::invalid_length(
+                "ML-KEM public key",
+                kem.length_public_key(),
+                public_key.len(),
+            )
+        })?;
 
         let (ciphertext, shared_secret) = kem
-            .encapsulate(public_key)
+            .encapsulate(pk_ref)
             .map_err(|e| HsmError::crypto(format!("ML-KEM encapsulation failed: {}", e)))?;
 
-        Ok((ciphertext, shared_secret))
+        Ok((ciphertext.into_vec(), shared_secret.into_vec()))
     }
 
     fn mlkem_decapsulate(
@@ -141,15 +165,27 @@ impl CryptoProvider for OqsCryptoProvider {
         private_key: &[u8],
         security_level: MlKemSecurityLevel,
     ) -> HsmResult<Vec<u8>> {
-        let alg_name = self.get_mlkem_algorithm(security_level);
-        let kem = oqs_kem::Kem::new(alg_name)
-            .map_err(|e| HsmError::crypto(format!("Failed to initialize ML-KEM: {}", e)))?;
+        let kem = Self::kem_instance(security_level)?;
+        let sk_ref = kem.secret_key_from_bytes(private_key).ok_or_else(|| {
+            Self::invalid_length(
+                "ML-KEM private key",
+                kem.length_secret_key(),
+                private_key.len(),
+            )
+        })?;
+        let ct_ref = kem.ciphertext_from_bytes(ciphertext).ok_or_else(|| {
+            Self::invalid_length(
+                "ML-KEM ciphertext",
+                kem.length_ciphertext(),
+                ciphertext.len(),
+            )
+        })?;
 
         let shared_secret = kem
-            .decapsulate(ciphertext, private_key)
+            .decapsulate(sk_ref, ct_ref)
             .map_err(|e| HsmError::crypto(format!("ML-KEM decapsulation failed: {}", e)))?;
 
-        Ok(shared_secret)
+        Ok(shared_secret.into_vec())
     }
 
     fn mldsa_sign(
@@ -158,15 +194,20 @@ impl CryptoProvider for OqsCryptoProvider {
         private_key: &[u8],
         security_level: MlDsaSecurityLevel,
     ) -> HsmResult<Vec<u8>> {
-        let alg_name = self.get_mldsa_algorithm(security_level);
-        let sig = oqs_sig::Sig::new(alg_name)
-            .map_err(|e| HsmError::crypto(format!("Failed to initialize ML-DSA: {}", e)))?;
+        let sig = Self::sig_instance(Self::mldsa_algorithm(security_level), "ML-DSA")?;
+        let sk_ref = sig.secret_key_from_bytes(private_key).ok_or_else(|| {
+            Self::invalid_length(
+                "ML-DSA private key",
+                sig.length_secret_key(),
+                private_key.len(),
+            )
+        })?;
 
         let signature = sig
-            .sign(message, private_key)
+            .sign(message, sk_ref)
             .map_err(|e| HsmError::crypto(format!("ML-DSA signing failed: {}", e)))?;
 
-        Ok(signature)
+        Ok(signature.into_vec())
     }
 
     fn mldsa_verify(
@@ -176,17 +217,19 @@ impl CryptoProvider for OqsCryptoProvider {
         public_key: &[u8],
         security_level: MlDsaSecurityLevel,
     ) -> HsmResult<bool> {
-        let alg_name = self.get_mldsa_algorithm(security_level);
-        let sig = oqs_sig::Sig::new(alg_name)
-            .map_err(|e| HsmError::crypto(format!("Failed to initialize ML-DSA: {}", e)))?;
+        let sig = Self::sig_instance(Self::mldsa_algorithm(security_level), "ML-DSA")?;
+        let sig_ref = sig.signature_from_bytes(signature).ok_or_else(|| {
+            Self::invalid_length("ML-DSA signature", sig.length_signature(), signature.len())
+        })?;
+        let pk_ref = sig.public_key_from_bytes(public_key).ok_or_else(|| {
+            Self::invalid_length(
+                "ML-DSA public key",
+                sig.length_public_key(),
+                public_key.len(),
+            )
+        })?;
 
-        let result = sig.verify(message, signature, public_key);
-
-        // OQS returns Ok(()) for successful verification and Err for failed verification
-        match result {
-            Ok(_) => Ok(true),
-            Err(_) => Ok(false),
-        }
+        Ok(sig.verify(message, sig_ref, pk_ref).is_ok())
     }
 
     fn slhdsa_sign(
@@ -195,15 +238,20 @@ impl CryptoProvider for OqsCryptoProvider {
         private_key: &[u8],
         security_level: SlhDsaSecurityLevel,
     ) -> HsmResult<Vec<u8>> {
-        let alg_name = self.get_slhdsa_algorithm(security_level);
-        let sig = oqs_sig::Sig::new(alg_name)
-            .map_err(|e| HsmError::crypto(format!("Failed to initialize SLH-DSA: {}", e)))?;
+        let sig = Self::sig_instance(Self::slhdsa_algorithm(security_level), "SLH-DSA")?;
+        let sk_ref = sig.secret_key_from_bytes(private_key).ok_or_else(|| {
+            Self::invalid_length(
+                "SLH-DSA private key",
+                sig.length_secret_key(),
+                private_key.len(),
+            )
+        })?;
 
         let signature = sig
-            .sign(message, private_key)
+            .sign(message, sk_ref)
             .map_err(|e| HsmError::crypto(format!("SLH-DSA signing failed: {}", e)))?;
 
-        Ok(signature)
+        Ok(signature.into_vec())
     }
 
     fn slhdsa_verify(
@@ -213,25 +261,27 @@ impl CryptoProvider for OqsCryptoProvider {
         public_key: &[u8],
         security_level: SlhDsaSecurityLevel,
     ) -> HsmResult<bool> {
-        let alg_name = self.get_slhdsa_algorithm(security_level);
-        let sig = oqs_sig::Sig::new(alg_name)
-            .map_err(|e| HsmError::crypto(format!("Failed to initialize SLH-DSA: {}", e)))?;
+        let sig = Self::sig_instance(Self::slhdsa_algorithm(security_level), "SLH-DSA")?;
+        let sig_ref = sig.signature_from_bytes(signature).ok_or_else(|| {
+            Self::invalid_length("SLH-DSA signature", sig.length_signature(), signature.len())
+        })?;
+        let pk_ref = sig.public_key_from_bytes(public_key).ok_or_else(|| {
+            Self::invalid_length(
+                "SLH-DSA public key",
+                sig.length_public_key(),
+                public_key.len(),
+            )
+        })?;
 
-        let result = sig.verify(message, signature, public_key);
-
-        // OQS returns Ok(()) for successful verification and Err for failed verification
-        match result {
-            Ok(_) => Ok(true),
-            Err(_) => Ok(false),
-        }
+        Ok(sig.verify(message, sig_ref, pk_ref).is_ok())
     }
 
     // Hybrid operations
     fn hybrid_ecdh_mlkem_encapsulate(
         &self,
-        ec_public_key: &[u8],
+        _ec_public_key: &[u8],
         pq_public_key: &[u8],
-        ec_type: KeyMaterialType,
+        _ec_type: KeyMaterialType,
         pq_level: MlKemSecurityLevel,
     ) -> HsmResult<(Vec<u8>, Vec<u8>)> {
         // First perform ML-KEM encapsulation
@@ -251,9 +301,9 @@ impl CryptoProvider for OqsCryptoProvider {
     fn hybrid_ecdh_mlkem_decapsulate(
         &self,
         ciphertext: &[u8],
-        ec_private_key: &[u8],
+        _ec_private_key: &[u8],
         pq_private_key: &[u8],
-        ec_type: KeyMaterialType,
+        _ec_type: KeyMaterialType,
         pq_level: MlKemSecurityLevel,
     ) -> HsmResult<Vec<u8>> {
         // In a complete implementation, we would:
@@ -271,9 +321,9 @@ impl CryptoProvider for OqsCryptoProvider {
     fn hybrid_ecdsa_mldsa_sign(
         &self,
         message: &[u8],
-        ec_private_key: &[u8],
+        _ec_private_key: &[u8],
         pq_private_key: &[u8],
-        ec_type: KeyMaterialType,
+        _ec_type: KeyMaterialType,
         pq_level: MlDsaSecurityLevel,
     ) -> HsmResult<Vec<u8>> {
         // For a complete hybrid signature implementation, we would:
@@ -291,9 +341,9 @@ impl CryptoProvider for OqsCryptoProvider {
         &self,
         message: &[u8],
         signature: &[u8],
-        ec_public_key: &[u8],
+        _ec_public_key: &[u8],
         pq_public_key: &[u8],
-        ec_type: KeyMaterialType,
+        _ec_type: KeyMaterialType,
         pq_level: MlDsaSecurityLevel,
     ) -> HsmResult<bool> {
         // For a complete hybrid verification implementation, we would:

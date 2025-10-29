@@ -128,18 +128,16 @@ impl<P: PolicyEngine + 'static> RetentionScheduler<P> {
                     );
                     self.approvals.insert(&approval)?;
                     let ctx = self.system_context();
-                    self.manager
-                        .mark_version_state_system(
-                            &metadata.id,
-                            metadata.version,
-                            KeyState::PurgeScheduled,
-                            &ctx,
-                            format!(
-                                "Retention purge scheduled; approval {} pending (deadline {})",
-                                approval.id, deadline
-                            ),
-                        )?
-                        .state;
+                    self.manager.mark_version_state_system(
+                        &metadata.id,
+                        metadata.version,
+                        KeyState::PurgeScheduled,
+                        &ctx,
+                        format!(
+                            "Retention purge scheduled; approval {} pending (deadline {})",
+                            approval.id, deadline
+                        ),
+                    )?;
                     metrics::counter!("ferrohsm_retention_purge_scheduled_total").increment(1);
                     info!(
                         key_id = metadata.id.as_str(),
