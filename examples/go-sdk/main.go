@@ -72,14 +72,31 @@ func main() {
     secret := mustJWTSecret()
     token := mustMakeJWT(secret, "go-sdk", []string{"operator"}, 5*time.Minute)
 
-    key := createKey(client, endpoint, token, CreateKeyRequest{
+    // Create a standard AES key
+    aesKey := createKey(client, endpoint, token, CreateKeyRequest{
         Algorithm:  "Aes256Gcm",
         Usage:      []string{"Encrypt", "Decrypt"},
         PolicyTags: []string{"cicd"},
     })
-    fmt.Printf("created key %s (%s)\n", key.ID, key.Algorithm)
+    fmt.Printf("created AES key %s (%s)\n", aesKey.ID, aesKey.Algorithm)
+    
+    // Create a post-quantum ML-KEM key
+    pqcKey := createKey(client, endpoint, token, CreateKeyRequest{
+        Algorithm:  "MlKem768",
+        Usage:      []string{"KeyEncapsulation"},
+        PolicyTags: []string{"pqc", "quantum_resistant"},
+    })
+    fmt.Printf("created PQC key %s (%s)\n", pqcKey.ID, pqcKey.Algorithm)
+    
+    // Create a hybrid key combining traditional and post-quantum cryptography
+    hybridKey := createKey(client, endpoint, token, CreateKeyRequest{
+        Algorithm:  "P256MlKem768",
+        Usage:      []string{"Encrypt", "Decrypt"},
+        PolicyTags: []string{"hybrid", "quantum_resistant"},
+    })
+    fmt.Printf("created hybrid key %s (%s)\n", hybridKey.ID, hybridKey.Algorithm)
 
-    signature := signPayload(client, endpoint, token, key.ID, []byte("build artifact"))
+    signature := signPayload(client, endpoint, token, aesKey.ID, []byte("build artifact"))
     fmt.Printf("signature: %s\n", signature)
 
     approvals, err := listApprovals(client, endpoint, token)

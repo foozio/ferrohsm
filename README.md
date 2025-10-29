@@ -4,9 +4,24 @@ FerroHSM is a software-based Hardware Security Module implemented in Rust with S
 
 ## Crate Overview
 
-- `hsm-core`: memory-safe cryptographic core featuring AES-256-GCM, RSA-2048/4096, P-256/P-384, policy enforcement, and audit logging.
+- `hsm-core`: memory-safe cryptographic core featuring AES-256-GCM, RSA-2048/4096, P-256/P-384, post-quantum cryptography (ML-KEM, ML-DSA, SLH-DSA), hybrid cryptography, policy enforcement, and audit logging.
 - `hsm-server`: Axum-based HTTPS service delivering REST APIs and a management UI surfacing approvals, audit trails, and live metrics with JWT authentication and optional mutual TLS support.
 - `hsm-cli`: administrative client for day-to-day operations built on top of the REST API with built-in JWT issuance.
+
+## Post-Quantum Cryptography Support
+
+FerroHSM includes support for NIST-standardized post-quantum cryptographic algorithms:
+
+- **ML-KEM** (formerly Kyber): Key Encapsulation Mechanism at security levels 512, 768, and 1024
+- **ML-DSA** (formerly Dilithium): Digital Signature Algorithm at security levels 65, 87, and 135
+- **SLH-DSA** (formerly SPHINCS+): Hash-based Digital Signature Algorithm with various parameter sets
+
+Hybrid cryptography options are also available, combining traditional elliptic curve cryptography with post-quantum algorithms:
+- P-256 + ML-KEM-768
+- P-384 + ML-KEM-1024
+- P-256 + ML-DSA variants
+
+Enhanced policy controls ensure proper governance of post-quantum operations, with configurable dual-control requirements and role-based restrictions for higher security levels.
 
 ## Getting Started
 

@@ -1,8 +1,11 @@
 [package]
 name = "hsm-server"
-version = "0.2.0"
+version = "0.2.1"
 edition = "2021"
 license = "MIT"
+
+[features]
+pqc = ["hsm-core/pqc"]
 
 [dependencies]
 anyhow = { workspace = true }

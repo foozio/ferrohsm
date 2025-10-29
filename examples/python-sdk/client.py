@@ -110,31 +110,57 @@ if __name__ == "__main__":
             ca_bundle=pathlib.Path("ca.pem"),
             token=token,
         )
-        key = client.create_key("Aes256Gcm", ["Encrypt", "Decrypt"], ["dev"])
-        print(f"created key {key.id}")
-        signature = client.sign(key.id, b"python-signed-payload")
-        print("signature", base64.b64encode(signature).decode())
+        # Create a standard AES key
+        aes_key = client.create_key("Aes256Gcm", ["Encrypt", "Decrypt"], ["dev"])
+        print(f"Created AES key {aes_key.id} ({aes_key.algorithm})")
+        
+        # Create a post-quantum ML-KEM key
+        try:
+            pqc_key = client.create_key(
+                "MlKem768",
+                ["KeyEncapsulation"],
+                ["pqc", "quantum_resistant"],
+            )
+            print(f"Created PQC key {pqc_key.id} ({pqc_key.algorithm})")
+        except Exception as e:
+            print(f"PQC key creation failed: {e}")
+
+        # Create a post-quantum ML-DSA signature key
+        try:
+            sig_key = client.create_key(
+                "MlDsa65",
+                ["Sign", "Verify"],
+                ["pqc", "quantum_resistant"],
+            )
+            print(f"Created PQC signature key {sig_key.id} ({sig_key.algorithm})")
+        except Exception as e:
+            print(f"PQC signature key creation failed: {e}")
+
+        # Sign a payload with the AES key
+        signature = client.sign(aes_key.id, b"python-signed-payload")
+        print("Signature:", base64.b64encode(signature).decode())
 
         try:
             approvals = client.list_approvals()
         except RuntimeError as exc:
-            print(f"approvals unavailable: {exc}")
+            print(f"Approvals unavailable: {exc}")
         else:
             if approvals:
+                print(f"{len(approvals)} approvals pending:")
                 for approval in approvals:
-                    print(f"pending approval {approval.id}: {approval.action} {approval.subject}")
+                    print(f"- {approval.action} {approval.subject} requested by {approval.requester}")
             else:
-                print("no pending approvals")
+                print("No pending approvals")
 
         metrics = client.metrics_snapshot()
         print(
-            "metrics",
+            "Metrics:",
             "rate_allowed={rate_allowed} rate_blocked={rate_blocked} cache_hits={cache_hits} cache_misses={cache_misses} cache_stores={cache_stores}".format(
                 **metrics
             ),
         )
     except RuntimeError as exc:
-        print(f"operation requires approval: {exc}")
+        print(f"Operation requires approval: {exc}")
         sys.exit(0)
 
 

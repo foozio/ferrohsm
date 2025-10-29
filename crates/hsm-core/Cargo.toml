@@ -1,8 +1,12 @@
 [package]
 name = "hsm-core"
-version = "0.2.0"
+version = "0.2.1"
 edition = "2021"
 license = "MIT"
+
+[features]
+default = []
+pqc = ["oqs"]
 
 [dependencies]
 anyhow = { workspace = true }
@@ -28,8 +32,11 @@ aes-gcm = { workspace = true }
 hex = { workspace = true }
 fs2 = { workspace = true }
 rusqlite = { workspace = true }
-# Post-quantum cryptography dependencies
-oqs = "0.8.0"
+# Post-quantum cryptography (optional to avoid cmake requirement)
+oqs = { version = "0.8.0", optional = true }
+ml-dsa = "0.0.4"
+sec1 = "0.7.3"
+pkcs8 = "0.10.2"
 
 [dev-dependencies]
 tempfile = { workspace = true }
@@ -37,4 +44,8 @@ criterion = { workspace = true }
 
 [[bench]]
 name = "attribute_lookup"
+harness = false
+
+[[example]]
+name = "pqc_test"
 harness = false
