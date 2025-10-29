@@ -1,25 +1,10 @@
 use std::convert::TryFrom;
 
 use ml_dsa::{
-    signature::{Signer, Verifier},
     MlDsa44, MlDsa65, MlDsa87,
+    signature::{Signer, Verifier, SignatureEncoding},
 };
-use pkcs8::{der::Decode, PrivateKeyInfo, SubjectPublicKeyInfo};
-
-use aes_gcm::{
-    aead::{Aead, Payload},
-    Aes256Gcm, KeyInit, Nonce,
-};
-use hmac::{Hmac, Mac};
-use p256::ecdsa::SigningKey as P256SigningKey;
-use p384::ecdsa::SigningKey as P384SigningKey;
-use rand::{rngs::OsRng, RngCore};
-use rsa::{
-    pkcs1v15::{self, Signature as RsaSignature},
-    pkcs8::{DecodePrivateKey, DecodePublicKey, EncodePrivateKey, EncodePublicKey, LineEnding},
-    signature::SignatureEncoding,
-    RsaPrivateKey, RsaPublicKey,
-};
+use pkcs8::{PrivateKeyInfo, SubjectPublicKeyInfo, der::{Decode, DecodePem, EncodePem}, EncodePrivateKey, EncodePublicKey, DecodePrivateKey, DecodePublicKey, LineEnding};
 use sec1::DecodeEcPrivateKey;
 use serde::{Deserialize, Serialize};
 use sha2::Sha256;
@@ -35,7 +20,7 @@ use crate::{
 };
 #[cfg(feature = "pqc")]
 use crate::{
-    pqc::{CryptoProvider, MlDsaSecurityLevel, MlKemSecurityLevel, SlhDsaSecurityLevel},
+    pqc::{CryptoProvider, MlDsaSecurityLevel, MlKemSecurityLevel},
     pqc_provider::OqsCryptoProvider,
 };
 
@@ -44,6 +29,33 @@ type HmacSha256 = Hmac<Sha256>;
 #[cfg(not(feature = "pqc"))]
 fn pqc_disabled_error() -> HsmError {
     HsmError::Crypto("post-quantum support requires enabling the `pqc` feature".into())
+}
+
+#[cfg(feature = "pqc")]
+fn unpack_post_quantum_material(material: KeyMaterial) -> HsmResult<(Vec<u8>, Vec<u8>, String)> {
+    match material {
+        KeyMaterial::PostQuantum {
+            public_key,
+            private_key: Some(private_key),
+            algorithm,
+        } => Ok((public_key, private_key, algorithm)),
+        KeyMaterial::PostQuantum {
+            private_key: None, ..
+        } => Err(HsmError::MissingPrivateKey),
+        other => Err(HsmError::Unexpected(format!(
+            "expected post-quantum material, got {other:?}"
+        ))),
+    }
+}
+
+#[cfg(feature = "pqc")]
+fn mlkem_level_from_label(label: &str) -> HsmResult<MlKemSecurityLevel> {
+    match label {
+        "ML-KEM-512" => Ok(MlKemSecurityLevel::MlKem512),
+        "ML-KEM-768" => Ok(MlKemSecurityLevel::MlKem768),
+        "ML-KEM-1024" => Ok(MlKemSecurityLevel::MlKem1024),
+        other => Err(HsmError::UnsupportedAlgorithm(other.to_string())),
+    }
 }
 
 pub struct CryptoEngine {
@@ -164,14 +176,12 @@ impl CryptoEngine {
                 KeyMaterial::Symmetric { key }
             }
             KeyAlgorithm::Rsa2048 => {
-                let private = RsaPrivateKey::new(&mut OsRng, 2048)
-                    .map_err(|e| HsmError::crypto(format!("rsa generate: {e}")))?;
-                rsa_material(private)?
+                let key_pair = rsa::KeyPair::generate(rsa::KeySize::Rsa2048).map_err(HsmError::crypto)?;
+                rsa_material_aws(key_pair)?
             }
             KeyAlgorithm::Rsa4096 => {
-                let private = RsaPrivateKey::new(&mut OsRng, 4096)
-                    .map_err(|e| HsmError::crypto(format!("rsa generate: {e}")))?;
-                rsa_material(private)?
+                let key_pair = rsa::KeyPair::generate(rsa::KeySize::Rsa4096).map_err(HsmError::crypto)?;
+                rsa_material_aws(key_pair)?
             }
             KeyAlgorithm::P256 => {
                 let signing = P256SigningKey::random(&mut OsRng);
@@ -201,14 +211,7 @@ impl CryptoEngine {
                 #[cfg(feature = "pqc")]
                 {
                     let provider = OqsCryptoProvider::new();
-                    let (public_key, private_key) = provider
-                        .ml_kem_keygen(MlKemSecurityLevel::Level1)
-                        .map_err(|e| HsmError::crypto(format!("ML-KEM-512 generate: {e}")))?;
-                    KeyMaterial::PostQuantum {
-                        public_key,
-                        private_key: Some(private_key),
-                        algorithm: "ML-KEM-512".to_string(),
-                    }
+                    provider.generate_mlkem_keypair(MlKemSecurityLevel::MlKem512)?
                 }
                 #[cfg(not(feature = "pqc"))]
                 {
@@ -221,14 +224,7 @@ impl CryptoEngine {
                 #[cfg(feature = "pqc")]
                 {
                     let provider = OqsCryptoProvider::new();
-                    let (public_key, private_key) = provider
-                        .ml_kem_keygen(MlKemSecurityLevel::Level3)
-                        .map_err(|e| HsmError::crypto(format!("ML-KEM-768 generate: {e}")))?;
-                    KeyMaterial::PostQuantum {
-                        public_key,
-                        private_key: Some(private_key),
-                        algorithm: "ML-KEM-768".to_string(),
-                    }
+                    provider.generate_mlkem_keypair(MlKemSecurityLevel::MlKem768)?
                 }
                 #[cfg(not(feature = "pqc"))]
                 {
@@ -241,14 +237,7 @@ impl CryptoEngine {
                 #[cfg(feature = "pqc")]
                 {
                     let provider = OqsCryptoProvider::new();
-                    let (public_key, private_key) = provider
-                        .ml_kem_keygen(MlKemSecurityLevel::Level5)
-                        .map_err(|e| HsmError::crypto(format!("ML-KEM-1024 generate: {e}")))?;
-                    KeyMaterial::PostQuantum {
-                        public_key,
-                        private_key: Some(private_key),
-                        algorithm: "ML-KEM-1024".to_string(),
-                    }
+                    provider.generate_mlkem_keypair(MlKemSecurityLevel::MlKem1024)?
                 }
                 #[cfg(not(feature = "pqc"))]
                 {
@@ -261,14 +250,7 @@ impl CryptoEngine {
                 #[cfg(feature = "pqc")]
                 {
                     let provider = OqsCryptoProvider::new();
-                    let (public_key, private_key) = provider
-                        .ml_dsa_keygen(MlDsaSecurityLevel::Level1)
-                        .map_err(|e| HsmError::crypto(format!("ML-DSA-44 generate: {e}")))?;
-                    KeyMaterial::PostQuantum {
-                        public_key,
-                        private_key: Some(private_key),
-                        algorithm: "ML-DSA-44".to_string(),
-                    }
+                    provider.generate_mldsa_keypair(MlDsaSecurityLevel::MlDsa44)?
                 }
                 #[cfg(not(feature = "pqc"))]
                 {
@@ -281,14 +263,7 @@ impl CryptoEngine {
                 #[cfg(feature = "pqc")]
                 {
                     let provider = OqsCryptoProvider::new();
-                    let (public_key, private_key) = provider
-                        .ml_dsa_keygen(MlDsaSecurityLevel::Level3)
-                        .map_err(|e| HsmError::crypto(format!("ML-DSA-65 generate: {e}")))?;
-                    KeyMaterial::PostQuantum {
-                        public_key,
-                        private_key: Some(private_key),
-                        algorithm: "ML-DSA-65".to_string(),
-                    }
+                    provider.generate_mldsa_keypair(MlDsaSecurityLevel::MlDsa65)?
                 }
                 #[cfg(not(feature = "pqc"))]
                 {
@@ -301,14 +276,7 @@ impl CryptoEngine {
                 #[cfg(feature = "pqc")]
                 {
                     let provider = OqsCryptoProvider::new();
-                    let (public_key, private_key) = provider
-                        .ml_dsa_keygen(MlDsaSecurityLevel::Level5)
-                        .map_err(|e| HsmError::crypto(format!("ML-DSA-87 generate: {e}")))?;
-                    KeyMaterial::PostQuantum {
-                        public_key,
-                        private_key: Some(private_key),
-                        algorithm: "ML-DSA-87".to_string(),
-                    }
+                    provider.generate_mldsa_keypair(MlDsaSecurityLevel::MlDsa87)?
                 }
                 #[cfg(not(feature = "pqc"))]
                 {
@@ -320,32 +288,32 @@ impl CryptoEngine {
             KeyAlgorithm::SlhDsa128f => {
                 return Err(HsmError::UnsupportedAlgorithm(
                     "SLH-DSA not implemented".to_string(),
-                ))
+                ));
             }
             KeyAlgorithm::SlhDsa128s => {
                 return Err(HsmError::UnsupportedAlgorithm(
                     "SLH-DSA not implemented".to_string(),
-                ))
+                ));
             }
             KeyAlgorithm::SlhDsa192f => {
                 return Err(HsmError::UnsupportedAlgorithm(
                     "SLH-DSA not implemented".to_string(),
-                ))
+                ));
             }
             KeyAlgorithm::SlhDsa192s => {
                 return Err(HsmError::UnsupportedAlgorithm(
                     "SLH-DSA not implemented".to_string(),
-                ))
+                ));
             }
             KeyAlgorithm::SlhDsa256f => {
                 return Err(HsmError::UnsupportedAlgorithm(
                     "SLH-DSA not implemented".to_string(),
-                ))
+                ));
             }
             KeyAlgorithm::SlhDsa256s => {
                 return Err(HsmError::UnsupportedAlgorithm(
                     "SLH-DSA not implemented".to_string(),
-                ))
+                ));
             }
             KeyAlgorithm::HybridP256MlKem512 => {
                 #[cfg(feature = "pqc")]
@@ -353,20 +321,22 @@ impl CryptoEngine {
                     let ec_signing = P256SigningKey::random(&mut OsRng);
                     let ec_private_pem = ec_signing
                         .to_pkcs8_pem(LineEnding::LF)
-                        .map_err(|e| HsmError::crypto(format!("P256 pem: {e}")))?;
+                        .map_err(|e| HsmError::crypto(format!("P256 pem: {e}")))?
+                        .to_string();
                     let ec_public_pem = ec_signing
                         .verifying_key()
                         .to_public_key_pem(LineEnding::LF)
                         .map_err(|e| HsmError::crypto(format!("P256 public pem: {e}")))?;
                     let provider = OqsCryptoProvider::new();
-                    let (pq_public_key, pq_private_key) = provider
-                        .ml_kem_keygen(MlKemSecurityLevel::Level1)
-                        .map_err(|e| HsmError::crypto(format!("ML-KEM-512 generate: {e}")))?;
+                    let (pq_public_key, pq_private_key, pq_algorithm) =
+                        unpack_post_quantum_material(
+                            provider.generate_mlkem_keypair(MlKemSecurityLevel::MlKem512)?,
+                        )?;
                     KeyMaterial::Hybrid {
                         ec_curve: KeyMaterialType::EcP256,
                         ec_private_pem: Some(ec_private_pem),
                         ec_public_pem,
-                        pq_algorithm: "ML-KEM-512".to_string(),
+                        pq_algorithm,
                         pq_public_key,
                         pq_private_key: Some(pq_private_key),
                     }
@@ -384,20 +354,22 @@ impl CryptoEngine {
                     let ec_signing = P256SigningKey::random(&mut OsRng);
                     let ec_private_pem = ec_signing
                         .to_pkcs8_pem(LineEnding::LF)
-                        .map_err(|e| HsmError::crypto(format!("P256 pem: {e}")))?;
+                        .map_err(|e| HsmError::crypto(format!("P256 pem: {e}")))?
+                        .to_string();
                     let ec_public_pem = ec_signing
                         .verifying_key()
                         .to_public_key_pem(LineEnding::LF)
                         .map_err(|e| HsmError::crypto(format!("P256 public pem: {e}")))?;
                     let provider = OqsCryptoProvider::new();
-                    let (pq_public_key, pq_private_key) = provider
-                        .ml_kem_keygen(MlKemSecurityLevel::Level3)
-                        .map_err(|e| HsmError::crypto(format!("ML-KEM-768 generate: {e}")))?;
+                    let (pq_public_key, pq_private_key, pq_algorithm) =
+                        unpack_post_quantum_material(
+                            provider.generate_mlkem_keypair(MlKemSecurityLevel::MlKem768)?,
+                        )?;
                     KeyMaterial::Hybrid {
                         ec_curve: KeyMaterialType::EcP256,
                         ec_private_pem: Some(ec_private_pem),
                         ec_public_pem,
-                        pq_algorithm: "ML-KEM-768".to_string(),
+                        pq_algorithm,
                         pq_public_key,
                         pq_private_key: Some(pq_private_key),
                     }
@@ -415,20 +387,22 @@ impl CryptoEngine {
                     let ec_signing = P384SigningKey::random(&mut OsRng);
                     let ec_private_pem = ec_signing
                         .to_pkcs8_pem(LineEnding::LF)
-                        .map_err(|e| HsmError::crypto(format!("P384 pem: {e}")))?;
+                        .map_err(|e| HsmError::crypto(format!("P384 pem: {e}")))?
+                        .to_string();
                     let ec_public_pem = ec_signing
                         .verifying_key()
                         .to_public_key_pem(LineEnding::LF)
                         .map_err(|e| HsmError::crypto(format!("P384 public pem: {e}")))?;
                     let provider = OqsCryptoProvider::new();
-                    let (pq_public_key, pq_private_key) = provider
-                        .ml_kem_keygen(MlKemSecurityLevel::Level5)
-                        .map_err(|e| HsmError::crypto(format!("ML-KEM-1024 generate: {e}")))?;
+                    let (pq_public_key, pq_private_key, pq_algorithm) =
+                        unpack_post_quantum_material(
+                            provider.generate_mlkem_keypair(MlKemSecurityLevel::MlKem1024)?,
+                        )?;
                     KeyMaterial::Hybrid {
                         ec_curve: KeyMaterialType::EcP384,
                         ec_private_pem: Some(ec_private_pem),
                         ec_public_pem,
-                        pq_algorithm: "ML-KEM-1024".to_string(),
+                        pq_algorithm,
                         pq_public_key,
                         pq_private_key: Some(pq_private_key),
                     }
@@ -446,20 +420,22 @@ impl CryptoEngine {
                     let ec_signing = P256SigningKey::random(&mut OsRng);
                     let ec_private_pem = ec_signing
                         .to_pkcs8_pem(LineEnding::LF)
-                        .map_err(|e| HsmError::crypto(format!("P256 pem: {e}")))?;
+                        .map_err(|e| HsmError::crypto(format!("P256 pem: {e}")))?
+                        .to_string();
                     let ec_public_pem = ec_signing
                         .verifying_key()
                         .to_public_key_pem(LineEnding::LF)
                         .map_err(|e| HsmError::crypto(format!("P256 public pem: {e}")))?;
                     let provider = OqsCryptoProvider::new();
-                    let (pq_public_key, pq_private_key) = provider
-                        .ml_dsa_keygen(MlDsaSecurityLevel::Level1)
-                        .map_err(|e| HsmError::crypto(format!("ML-DSA-44 generate: {e}")))?;
+                    let (pq_public_key, pq_private_key, pq_algorithm) =
+                        unpack_post_quantum_material(
+                            provider.generate_mldsa_keypair(MlDsaSecurityLevel::MlDsa44)?,
+                        )?;
                     KeyMaterial::Hybrid {
                         ec_curve: KeyMaterialType::EcP256,
                         ec_private_pem: Some(ec_private_pem),
                         ec_public_pem,
-                        pq_algorithm: "ML-DSA-44".to_string(),
+                        pq_algorithm,
                         pq_public_key,
                         pq_private_key: Some(pq_private_key),
                     }
@@ -477,20 +453,22 @@ impl CryptoEngine {
                     let ec_signing = P256SigningKey::random(&mut OsRng);
                     let ec_private_pem = ec_signing
                         .to_pkcs8_pem(LineEnding::LF)
-                        .map_err(|e| HsmError::crypto(format!("P256 pem: {e}")))?;
+                        .map_err(|e| HsmError::crypto(format!("P256 pem: {e}")))?
+                        .to_string();
                     let ec_public_pem = ec_signing
                         .verifying_key()
                         .to_public_key_pem(LineEnding::LF)
                         .map_err(|e| HsmError::crypto(format!("P256 public pem: {e}")))?;
                     let provider = OqsCryptoProvider::new();
-                    let (pq_public_key, pq_private_key) = provider
-                        .ml_dsa_keygen(MlDsaSecurityLevel::Level3)
-                        .map_err(|e| HsmError::crypto(format!("ML-DSA-65 generate: {e}")))?;
+                    let (pq_public_key, pq_private_key, pq_algorithm) =
+                        unpack_post_quantum_material(
+                            provider.generate_mldsa_keypair(MlDsaSecurityLevel::MlDsa65)?,
+                        )?;
                     KeyMaterial::Hybrid {
                         ec_curve: KeyMaterialType::EcP256,
                         ec_private_pem: Some(ec_private_pem),
                         ec_public_pem,
-                        pq_algorithm: "ML-DSA-65".to_string(),
+                        pq_algorithm,
                         pq_public_key,
                         pq_private_key: Some(pq_private_key),
                     }
@@ -508,20 +486,22 @@ impl CryptoEngine {
                     let ec_signing = P384SigningKey::random(&mut OsRng);
                     let ec_private_pem = ec_signing
                         .to_pkcs8_pem(LineEnding::LF)
-                        .map_err(|e| HsmError::crypto(format!("P384 pem: {e}")))?;
+                        .map_err(|e| HsmError::crypto(format!("P384 pem: {e}")))?
+                        .to_string();
                     let ec_public_pem = ec_signing
                         .verifying_key()
                         .to_public_key_pem(LineEnding::LF)
                         .map_err(|e| HsmError::crypto(format!("P384 public pem: {e}")))?;
                     let provider = OqsCryptoProvider::new();
-                    let (pq_public_key, pq_private_key) = provider
-                        .ml_dsa_keygen(MlDsaSecurityLevel::Level5)
-                        .map_err(|e| HsmError::crypto(format!("ML-DSA-87 generate: {e}")))?;
+                    let (pq_public_key, pq_private_key, pq_algorithm) =
+                        unpack_post_quantum_material(
+                            provider.generate_mldsa_keypair(MlDsaSecurityLevel::MlDsa87)?,
+                        )?;
                     KeyMaterial::Hybrid {
                         ec_curve: KeyMaterialType::EcP384,
                         ec_private_pem: Some(ec_private_pem),
                         ec_public_pem,
-                        pq_algorithm: "ML-DSA-87".to_string(),
+                        pq_algorithm,
                         pq_public_key,
                         pq_private_key: Some(pq_private_key),
                     }
@@ -640,16 +620,15 @@ impl CryptoEngine {
             }
             CryptoOperation::Sign { payload } => match material {
                 KeyMaterial::Rsa { private_pem, .. } => {
-                    let private =
-                        RsaPrivateKey::from_pkcs8_pem(private_pem).map_err(HsmError::crypto)?;
-                    let signing_key = pkcs1v15::SigningKey::<Sha256>::new(private);
-                    let signature = signing_key.sign(&payload).to_vec();
+                    let pki = PrivateKeyInfo::from_pem(private_pem).map_err(HsmError::crypto)?;
+                    let private_der = pki.to_der().map_err(HsmError::crypto)?;
+                    let key_pair = rsa::KeyPair::from_pkcs8(&private_der).map_err(HsmError::crypto)?;
+                    let digest = digest::digest(&digest::SHA256, &payload);
+                    let mut signature = vec![0; key_pair.public_modulus_len()];
+                    key_pair.sign(&digest, &mut signature).map_err(HsmError::crypto)?;
                     Ok(KeyOperationResult::Signature { signature })
                 }
-                KeyMaterial::Ec {
-                    private_pem,
-                    ..
-                } => {
+                KeyMaterial::Ec { private_pem, .. } => {
                     let signing_key = p256::ecdsa::SigningKey::from_sec1_pem(private_pem)
                         .map_err(HsmError::crypto)?;
                     let signature: p256::ecdsa::Signature = signing_key.sign(&payload);
@@ -724,20 +703,17 @@ impl CryptoEngine {
                     }
                     _ => Err(HsmError::MissingPrivateKey),
                 },
-                _ => {
-                    Err(HsmError::UnsupportedAlgorithm(
-                        "Unsupported signing algorithm".to_string(),
-                    ))
-                }
+                _ => Err(HsmError::UnsupportedAlgorithm(
+                    "Unsupported signing algorithm".to_string(),
+                )),
             },
             CryptoOperation::Verify { payload, signature } => match material {
                 KeyMaterial::Rsa { public_pem, .. } => {
-                    let public =
-                        RsaPublicKey::from_public_key_pem(public_pem).map_err(HsmError::crypto)?;
-                    let verifying = pkcs1v15::VerifyingKey::<Sha256>::new(public);
-                    let signature =
-                        RsaSignature::try_from(signature.as_slice()).map_err(HsmError::crypto)?;
-                    let valid = verifying.verify(&payload, &signature).is_ok();
+                    let spki = SubjectPublicKeyInfo::from_pem(public_pem).map_err(HsmError::crypto)?;
+                    let public_der = spki.to_der().map_err(HsmError::crypto)?;
+                    let public_key = rsa::PublicKey::from_der(&public_der).map_err(HsmError::crypto)?;
+                    let digest = digest::digest(&digest::SHA256, &payload);
+                    let valid = public_key.verify(&digest, &signature).is_ok();
                     Ok(KeyOperationResult::Verified { valid })
                 }
                 KeyMaterial::Ec { public_pem, .. } => {
@@ -785,7 +761,7 @@ impl CryptoEngine {
                         _ => {
                             return Err(HsmError::UnsupportedAlgorithm(
                                 "Only ML-DSA algorithms can be used for verification".to_string(),
-                            ))
+                            ));
                         }
                     };
                     Ok(KeyOperationResult::Verified { valid })
@@ -796,15 +772,16 @@ impl CryptoEngine {
                     ..
                 } => {
                     // Try ECDSA verification first
-                    let ecdsa_result = p256::ecdsa::VerifyingKey::from_public_key_der(ec_public_pem.as_bytes())
-                        .map_err(|e| HsmError::crypto(e.to_string()))
-                        .and_then(|verifying_key| {
-                            p256::ecdsa::Signature::from_slice(&signature)
-                                .map_err(|e| HsmError::crypto(e.to_string()))
-                                .map(|sig| verifying_key.verify(&payload, &sig).is_ok())
-                        })
-                        .unwrap_or(false);
-                    
+                    let ecdsa_result =
+                        p256::ecdsa::VerifyingKey::from_public_key_der(ec_public_pem.as_bytes())
+                            .map_err(|e| HsmError::crypto(e.to_string()))
+                            .and_then(|verifying_key| {
+                                p256::ecdsa::Signature::from_slice(&signature)
+                                    .map_err(|e| HsmError::crypto(e.to_string()))
+                                    .map(|sig| verifying_key.verify(&payload, &sig).is_ok())
+                            })
+                            .unwrap_or(false);
+
                     if ecdsa_result {
                         Ok(KeyOperationResult::Verified { valid: true })
                     } else {
@@ -821,11 +798,9 @@ impl CryptoEngine {
                         Ok(KeyOperationResult::Verified { valid })
                     }
                 }
-                _ => {
-                    Err(HsmError::UnsupportedAlgorithm(
-                        "Unsupported verification algorithm".to_string(),
-                    ))
-                }
+                _ => Err(HsmError::UnsupportedAlgorithm(
+                    "Unsupported verification algorithm".to_string(),
+                )),
             },
             CryptoOperation::WrapKey { key_material } => {
                 let key = expect_symmetric(material)?;
@@ -873,18 +848,9 @@ impl CryptoEngine {
                                 recipient_public_key.as_ref().unwrap_or(public_key);
                             let provider = OqsCryptoProvider::new();
                             if algorithm.starts_with("ML-KEM") {
-                                let security_level = match algorithm.as_str() {
-                                    "ML-KEM-512" => MlKemSecurityLevel::Level1,
-                                    "ML-KEM-768" => MlKemSecurityLevel::Level3,
-                                    "ML-KEM-1024" => MlKemSecurityLevel::Level5,
-                                    _ => {
-                                        return Err(HsmError::Crypto(
-                                            "Unsupported ML-KEM algorithm".into(),
-                                        ))
-                                    }
-                                };
+                                let security_level = mlkem_level_from_label(algorithm.as_str())?;
                                 let (ciphertext, shared_secret) = provider
-                                    .ml_kem_encapsulate(security_level, target_public_key)
+                                    .mlkem_encapsulate(target_public_key, security_level)
                                     .map_err(|e| {
                                         HsmError::crypto(format!("ML-KEM encapsulate: {e}"))
                                     })?;
@@ -908,18 +874,9 @@ impl CryptoEngine {
                                 recipient_public_key.as_ref().unwrap_or(pq_public_key);
                             let provider = OqsCryptoProvider::new();
                             if pq_algorithm.starts_with("ML-KEM") {
-                                let security_level = match pq_algorithm.as_str() {
-                                    "ML-KEM-512" => MlKemSecurityLevel::Level1,
-                                    "ML-KEM-768" => MlKemSecurityLevel::Level3,
-                                    "ML-KEM-1024" => MlKemSecurityLevel::Level5,
-                                    _ => {
-                                        return Err(HsmError::Crypto(
-                                            "Unsupported ML-KEM algorithm".into(),
-                                        ))
-                                    }
-                                };
+                                let security_level = mlkem_level_from_label(pq_algorithm.as_str())?;
                                 let (ciphertext, shared_secret) = provider
-                                    .ml_kem_encapsulate(security_level, target_public_key)
+                                    .mlkem_encapsulate(target_public_key, security_level)
                                     .map_err(|e| {
                                         HsmError::crypto(format!("ML-KEM encapsulate: {e}"))
                                     })?;
@@ -941,6 +898,7 @@ impl CryptoEngine {
                 }
                 #[cfg(not(feature = "pqc"))]
                 {
+                    let _ = recipient_public_key;
                     Err(pqc_disabled_error())
                 }
             }
@@ -955,18 +913,9 @@ impl CryptoEngine {
                         } => {
                             let provider = OqsCryptoProvider::new();
                             if algorithm.starts_with("ML-KEM") {
-                                let security_level = match algorithm.as_str() {
-                                    "ML-KEM-512" => MlKemSecurityLevel::Level1,
-                                    "ML-KEM-768" => MlKemSecurityLevel::Level3,
-                                    "ML-KEM-1024" => MlKemSecurityLevel::Level5,
-                                    _ => {
-                                        return Err(HsmError::Crypto(
-                                            "Unsupported ML-KEM algorithm".into(),
-                                        ))
-                                    }
-                                };
+                                let security_level = mlkem_level_from_label(algorithm.as_str())?;
                                 let shared_secret = provider
-                                    .ml_kem_decapsulate(security_level, private_key, &ciphertext)
+                                    .mlkem_decapsulate(&ciphertext, private_key, security_level)
                                     .map_err(|e| {
                                         HsmError::crypto(format!("ML-KEM decapsulate: {e}"))
                                     })?;
@@ -985,18 +934,9 @@ impl CryptoEngine {
                         } => {
                             let provider = OqsCryptoProvider::new();
                             if pq_algorithm.starts_with("ML-KEM") {
-                                let security_level = match pq_algorithm.as_str() {
-                                    "ML-KEM-512" => MlKemSecurityLevel::Level1,
-                                    "ML-KEM-768" => MlKemSecurityLevel::Level3,
-                                    "ML-KEM-1024" => MlKemSecurityLevel::Level5,
-                                    _ => {
-                                        return Err(HsmError::Crypto(
-                                            "Unsupported ML-KEM algorithm".into(),
-                                        ))
-                                    }
-                                };
+                                let security_level = mlkem_level_from_label(pq_algorithm.as_str())?;
                                 let shared_secret = provider
-                                    .ml_kem_decapsulate(security_level, pq_private_key, &ciphertext)
+                                    .mlkem_decapsulate(&ciphertext, pq_private_key, security_level)
                                     .map_err(|e| {
                                         HsmError::crypto(format!("ML-KEM decapsulate: {e}"))
                                     })?;
@@ -1015,12 +955,14 @@ impl CryptoEngine {
                 }
                 #[cfg(not(feature = "pqc"))]
                 {
+                    let _ = ciphertext;
                     Err(pqc_disabled_error())
                 }
             }
             CryptoOperation::HybridEncrypt { plaintext } => {
                 #[cfg(feature = "pqc")]
                 {
+                    let _ = &plaintext;
                     match material {
                         KeyMaterial::Hybrid {
                             ec_curve,
@@ -1031,18 +973,9 @@ impl CryptoEngine {
                         } => {
                             let provider = OqsCryptoProvider::new();
                             if pq_algorithm.starts_with("ML-KEM") {
-                                let security_level = match pq_algorithm.as_str() {
-                                    "ML-KEM-512" => MlKemSecurityLevel::Level1,
-                                    "ML-KEM-768" => MlKemSecurityLevel::Level3,
-                                    "ML-KEM-1024" => MlKemSecurityLevel::Level5,
-                                    _ => {
-                                        return Err(HsmError::Crypto(
-                                            "Unsupported ML-KEM algorithm".into(),
-                                        ))
-                                    }
-                                };
+                                let security_level = mlkem_level_from_label(pq_algorithm.as_str())?;
                                 let (kem_ciphertext, shared_secret) = provider
-                                    .ml_kem_encapsulate(security_level, pq_public_key)
+                                    .mlkem_encapsulate(pq_public_key, security_level)
                                     .map_err(|e| {
                                         HsmError::crypto(format!("ML-KEM encapsulate: {e}"))
                                     })?;
@@ -1063,7 +996,7 @@ impl CryptoEngine {
                                     _ => {
                                         return Err(HsmError::Crypto(
                                             "Unsupported EC curve for hybrid encryption".into(),
-                                        ))
+                                        ));
                                     }
                                 };
 
@@ -1089,6 +1022,7 @@ impl CryptoEngine {
                 }
                 #[cfg(not(feature = "pqc"))]
                 {
+                    let _ = plaintext;
                     Err(pqc_disabled_error())
                 }
             }
@@ -1106,18 +1040,9 @@ impl CryptoEngine {
                         } => {
                             let provider = OqsCryptoProvider::new();
                             if pq_algorithm.starts_with("ML-KEM") {
-                                let security_level = match pq_algorithm.as_str() {
-                                    "ML-KEM-512" => MlKemSecurityLevel::Level1,
-                                    "ML-KEM-768" => MlKemSecurityLevel::Level3,
-                                    "ML-KEM-1024" => MlKemSecurityLevel::Level5,
-                                    _ => {
-                                        return Err(HsmError::Crypto(
-                                            "Unsupported ML-KEM algorithm".into(),
-                                        ))
-                                    }
-                                };
+                                let security_level = mlkem_level_from_label(pq_algorithm.as_str())?;
                                 let shared_secret = provider
-                                    .ml_kem_decapsulate(security_level, pq_private_key, &ciphertext)
+                                    .mlkem_decapsulate(&ciphertext, pq_private_key, security_level)
                                     .map_err(|e| {
                                         HsmError::crypto(format!("ML-KEM decapsulate: {e}"))
                                     })?;
@@ -1143,6 +1068,8 @@ impl CryptoEngine {
                 }
                 #[cfg(not(feature = "pqc"))]
                 {
+                    let _ = ciphertext;
+                    let _ = ephemeral_key;
                     Err(pqc_disabled_error())
                 }
             }
@@ -1269,16 +1196,13 @@ impl CryptoEngine {
     }
 }
 
-fn rsa_material(private: RsaPrivateKey) -> HsmResult<KeyMaterial> {
-    let public = RsaPublicKey::from(&private);
-    let private_pem = private
-        .to_pkcs8_pem(LineEnding::LF)
-        .map_err(HsmError::crypto)?
-        .to_string();
-    let public_pem = public
-        .to_public_key_pem(LineEnding::LF)
-        .map_err(HsmError::crypto)?
-        .to_string();
+fn rsa_material_aws(key_pair: rsa::KeyPair) -> HsmResult<KeyMaterial> {
+    let private_der = key_pair.to_pkcs8().map_err(HsmError::crypto)?;
+    let pki = PrivateKeyInfo::from_der(&private_der).map_err(HsmError::crypto)?;
+    let private_pem = pki.to_pem(LineEnding::LF).map_err(HsmError::crypto)?;
+    let public_der = key_pair.public().to_spki().map_err(HsmError::crypto)?;
+    let spki = SubjectPublicKeyInfo::from_der(&public_der).map_err(HsmError::crypto)?;
+    let public_pem = spki.to_pem(LineEnding::LF).map_err(HsmError::crypto)?;
     Ok(KeyMaterial::Rsa {
         private_pem,
         public_pem,
