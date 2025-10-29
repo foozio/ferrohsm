@@ -12,23 +12,85 @@ use crate::{
 pub trait CryptoProvider {
     fn generate_mlkem_keypair(&self, security_level: MlKemSecurityLevel) -> HsmResult<KeyMaterial>;
     fn generate_mldsa_keypair(&self, security_level: MlDsaSecurityLevel) -> HsmResult<KeyMaterial>;
-    fn generate_slhdsa_keypair(&self, security_level: SlhDsaSecurityLevel) -> HsmResult<KeyMaterial>;
-    
-    fn mlkem_encapsulate(&self, public_key: &[u8], security_level: MlKemSecurityLevel) -> HsmResult<(Vec<u8>, Vec<u8>)>;
-    fn mlkem_decapsulate(&self, ciphertext: &[u8], private_key: &[u8], security_level: MlKemSecurityLevel) -> HsmResult<Vec<u8>>;
-    
-    fn mldsa_sign(&self, message: &[u8], private_key: &[u8], security_level: MlDsaSecurityLevel) -> HsmResult<Vec<u8>>;
-    fn mldsa_verify(&self, message: &[u8], signature: &[u8], public_key: &[u8], security_level: MlDsaSecurityLevel) -> HsmResult<bool>;
-    
-    fn slhdsa_sign(&self, message: &[u8], private_key: &[u8], security_level: SlhDsaSecurityLevel) -> HsmResult<Vec<u8>>;
-    fn slhdsa_verify(&self, message: &[u8], signature: &[u8], public_key: &[u8], security_level: SlhDsaSecurityLevel) -> HsmResult<bool>;
-    
+    fn generate_slhdsa_keypair(
+        &self,
+        security_level: SlhDsaSecurityLevel,
+    ) -> HsmResult<KeyMaterial>;
+
+    fn mlkem_encapsulate(
+        &self,
+        public_key: &[u8],
+        security_level: MlKemSecurityLevel,
+    ) -> HsmResult<(Vec<u8>, Vec<u8>)>;
+    fn mlkem_decapsulate(
+        &self,
+        ciphertext: &[u8],
+        private_key: &[u8],
+        security_level: MlKemSecurityLevel,
+    ) -> HsmResult<Vec<u8>>;
+
+    fn mldsa_sign(
+        &self,
+        message: &[u8],
+        private_key: &[u8],
+        security_level: MlDsaSecurityLevel,
+    ) -> HsmResult<Vec<u8>>;
+    fn mldsa_verify(
+        &self,
+        message: &[u8],
+        signature: &[u8],
+        public_key: &[u8],
+        security_level: MlDsaSecurityLevel,
+    ) -> HsmResult<bool>;
+
+    fn slhdsa_sign(
+        &self,
+        message: &[u8],
+        private_key: &[u8],
+        security_level: SlhDsaSecurityLevel,
+    ) -> HsmResult<Vec<u8>>;
+    fn slhdsa_verify(
+        &self,
+        message: &[u8],
+        signature: &[u8],
+        public_key: &[u8],
+        security_level: SlhDsaSecurityLevel,
+    ) -> HsmResult<bool>;
+
     // Hybrid operations
-    fn hybrid_ecdh_mlkem_encapsulate(&self, ec_public_key: &[u8], pq_public_key: &[u8], ec_type: KeyMaterialType, pq_level: MlKemSecurityLevel) -> HsmResult<(Vec<u8>, Vec<u8>)>;
-    fn hybrid_ecdh_mlkem_decapsulate(&self, ciphertext: &[u8], ec_private_key: &[u8], pq_private_key: &[u8], ec_type: KeyMaterialType, pq_level: MlKemSecurityLevel) -> HsmResult<Vec<u8>>;
-    
-    fn hybrid_ecdsa_mldsa_sign(&self, message: &[u8], ec_private_key: &[u8], pq_private_key: &[u8], ec_type: KeyMaterialType, pq_level: MlDsaSecurityLevel) -> HsmResult<Vec<u8>>;
-    fn hybrid_ecdsa_mldsa_verify(&self, message: &[u8], signature: &[u8], ec_public_key: &[u8], pq_public_key: &[u8], ec_type: KeyMaterialType, pq_level: MlDsaSecurityLevel) -> HsmResult<bool>;
+    fn hybrid_ecdh_mlkem_encapsulate(
+        &self,
+        ec_public_key: &[u8],
+        pq_public_key: &[u8],
+        ec_type: KeyMaterialType,
+        pq_level: MlKemSecurityLevel,
+    ) -> HsmResult<(Vec<u8>, Vec<u8>)>;
+    fn hybrid_ecdh_mlkem_decapsulate(
+        &self,
+        ciphertext: &[u8],
+        ec_private_key: &[u8],
+        pq_private_key: &[u8],
+        ec_type: KeyMaterialType,
+        pq_level: MlKemSecurityLevel,
+    ) -> HsmResult<Vec<u8>>;
+
+    fn hybrid_ecdsa_mldsa_sign(
+        &self,
+        message: &[u8],
+        ec_private_key: &[u8],
+        pq_private_key: &[u8],
+        ec_type: KeyMaterialType,
+        pq_level: MlDsaSecurityLevel,
+    ) -> HsmResult<Vec<u8>>;
+    fn hybrid_ecdsa_mldsa_verify(
+        &self,
+        message: &[u8],
+        signature: &[u8],
+        ec_public_key: &[u8],
+        pq_public_key: &[u8],
+        ec_type: KeyMaterialType,
+        pq_level: MlDsaSecurityLevel,
+    ) -> HsmResult<bool>;
 }
 
 /// ML-KEM (Kyber) security levels as defined in NIST FIPS 203
@@ -241,40 +303,24 @@ pub enum PqKeyOperationResult {
         shared_secret: Vec<u8>,
     },
     /// Result of ML-KEM decapsulation
-    MlKemDecapsulated {
-        shared_secret: Vec<u8>,
-    },
+    MlKemDecapsulated { shared_secret: Vec<u8> },
     /// Result of ML-DSA signing
-    MlDsaSignature {
-        signature: Vec<u8>,
-    },
+    MlDsaSignature { signature: Vec<u8> },
     /// Result of ML-DSA verification
-    MlDsaVerified {
-        valid: bool,
-    },
+    MlDsaVerified { valid: bool },
     /// Result of SLH-DSA signing
-    SlhDsaSignature {
-        signature: Vec<u8>,
-    },
+    SlhDsaSignature { signature: Vec<u8> },
     /// Result of SLH-DSA verification
-    SlhDsaVerified {
-        valid: bool,
-    },
+    SlhDsaVerified { valid: bool },
     /// Result of hybrid encapsulation
     HybridEncapsulated {
         ciphertext: Vec<u8>,
         shared_secret: Vec<u8>,
     },
     /// Result of hybrid decapsulation
-    HybridDecapsulated {
-        shared_secret: Vec<u8>,
-    },
+    HybridDecapsulated { shared_secret: Vec<u8> },
     /// Result of hybrid signing
-    HybridSignature {
-        signature: Vec<u8>,
-    },
+    HybridSignature { signature: Vec<u8> },
     /// Result of hybrid verification
-    HybridVerified {
-        valid: bool,
-    },
+    HybridVerified { valid: bool },
 }

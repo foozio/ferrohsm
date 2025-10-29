@@ -14,23 +14,21 @@ use cryptoki_sys::{
     CKR_CRYPTOKI_ALREADY_INITIALIZED, CKR_CRYPTOKI_NOT_INITIALIZED, CKR_FUNCTION_FAILED, CKR_OK,
     CK_RV, CK_VOID_PTR,
 };
-use hsm_core::{
-    models::{KeyAlgorithm, KeyMaterial, KeyMaterialType, KeyMetadata},
-    pqc::{CryptoProvider, MlDsaSecurityLevel, MlKemSecurityLevel, SlhDsaSecurityLevel},
-};
+
+
+#[cfg(feature = "pqc")]
+use hsm_core::pqc::{CryptoProvider, MlDsaSecurityLevel, MlKemSecurityLevel, SlhDsaSecurityLevel};
 use parking_lot::RwLock;
 use std::sync::Arc;
 use thiserror::Error;
-use tracing::{debug, error, info, warn};
+use tracing::{error, info};
 
 // Module declarations
-pub mod mechanism;
 pub mod attribute;
+pub mod mechanism;
 
 #[derive(Debug)]
-struct InstanceContext {
-    created_at: std::time::Instant,
-}
+struct InstanceContext {}
 
 #[derive(Debug, Default)]
 struct GlobalState {
@@ -58,9 +56,7 @@ pub fn initialize(_args: CK_VOID_PTR) -> Result<(), FrontendError> {
     if guard.context.is_some() {
         return Err(FrontendError::AlreadyInitialized);
     }
-    guard.context = Some(Arc::new(InstanceContext {
-        created_at: std::time::Instant::now(),
-    }));
+    guard.context = Some(Arc::new(InstanceContext {}));
     info!("PKCS#11 instance initialized");
     Ok(())
 }
@@ -83,7 +79,7 @@ fn translate_error(err: FrontendError) -> CK_RV {
     }
 }
 
-#[no_mangle]
+#[unsafe(no_mangle)]
 pub extern "C" fn C_Initialize(p_init_args: CK_VOID_PTR) -> CK_RV {
     match initialize(p_init_args) {
         Ok(()) => CKR_OK,
@@ -96,7 +92,7 @@ pub extern "C" fn C_Initialize(p_init_args: CK_VOID_PTR) -> CK_RV {
     }
 }
 
-#[no_mangle]
+#[unsafe(no_mangle)]
 pub extern "C" fn C_Finalize(_reserved: CK_VOID_PTR) -> CK_RV {
     match finalize() {
         Ok(()) => CKR_OK,

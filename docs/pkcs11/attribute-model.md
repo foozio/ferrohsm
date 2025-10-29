@@ -34,8 +34,8 @@
 - Attribute updates are versioned with the underlying key metadata to retain auditability.
 
 ## Indexing & Lookup
-- Maintain secondary indexes to accelerate searches. The initial prototype is implemented in `MemoryKeyStore` and tracks `HashMap<AttributeId, HashMap<AttributeValue, Vec<(KeyId, version)>>`, allowing quick candidate lookup for `C_FindObjects*`.
-- Disk-backed stores fall back to a linear scan during Phase 0; indexes will be extended as we integrate PKCS#11 persistence.
+- Maintain secondary indexes to accelerate searches. Both `MemoryKeyStore` and the filesystem/SQLite backends now track `HashMap<AttributeId, HashMap<AttributeValue, Vec<(KeyId, version)>>`, allowing quick candidate lookup for `C_FindObjects*` templates without loading every record.
+- Attribute lookup benchmarks (`cargo bench -p hsm-core attribute_lookup`) compare in-memory and filesystem stores to guard against performance regressions as datasets grow.
 - Session-specific objects rely on the session manager’s search cursor (see `docs/pkcs11/session-manager.md`) and are not persisted.
 
 ## Attribute Mutability Rules
@@ -51,4 +51,4 @@
 ## Next Steps
 1. [x] Add `AttributeSet` struct and serialization helpers to `hsm-core`.
 2. [x] Implement attribute validation API referenced by the forthcoming session manager.
-3. Prototype index structures and benchmark common `C_FindObjects*` queries (MemoryKeyStore implementation completed; benchmark work pending).
+3. [x] Prototype index structures and benchmark common `C_FindObjects*` queries.

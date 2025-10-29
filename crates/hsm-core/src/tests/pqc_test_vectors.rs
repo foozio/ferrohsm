@@ -1,4 +1,4 @@
-use crate::pqc::{MlKemSecurityLevel, MlDsaSecurityLevel, SlhDsaSecurityLevel};
+use crate::pqc::{MlDsaSecurityLevel, MlKemSecurityLevel, SlhDsaSecurityLevel};
 
 /// Test vectors for ML-KEM algorithms
 pub struct MlKemTestVector {
@@ -34,7 +34,7 @@ pub struct SlhDsaTestVector {
 // ML-KEM-512 test vector (placeholder)
 pub const ML_KEM_512_TEST_VECTOR: MlKemTestVector = MlKemTestVector {
     security_level: MlKemSecurityLevel::Level1,
-    public_key: &[0u8; 800],  // Approximate size for ML-KEM-512 public key
+    public_key: &[0u8; 800],   // Approximate size for ML-KEM-512 public key
     private_key: &[0u8; 1632], // Approximate size for ML-KEM-512 private key
     ciphertext: &[0u8; 768],   // Approximate size for ML-KEM-512 ciphertext
     shared_secret: &[0u8; 32], // Shared secret size
@@ -79,26 +79,26 @@ pub const ML_DSA_87_TEST_VECTOR: MlDsaTestVector = MlDsaTestVector {
 // ML-DSA-135 test vector (placeholder)
 pub const ML_DSA_135_TEST_VECTOR: MlDsaTestVector = MlDsaTestVector {
     security_level: MlDsaSecurityLevel::Level5,
-    public_key: &[0u8; 2592],   // Approximate size for ML-DSA-135 public key
-    private_key: &[0u8; 4896],  // Approximate size for ML-DSA-135 private key
-    message: &[0u8; 32],        // Sample message
-    signature: &[0u8; 4595],    // Approximate size for ML-DSA-135 signature
+    public_key: &[0u8; 2592],  // Approximate size for ML-DSA-135 public key
+    private_key: &[0u8; 4896], // Approximate size for ML-DSA-135 private key
+    message: &[0u8; 32],       // Sample message
+    signature: &[0u8; 4595],   // Approximate size for ML-DSA-135 signature
 };
 
 // SLH-DSA-SHA2-128f test vector (placeholder)
 pub const SLH_DSA_SHA2_128F_TEST_VECTOR: SlhDsaTestVector = SlhDsaTestVector {
     security_level: SlhDsaSecurityLevel::Level1,
-    public_key: &[0u8; 32],    // Approximate size for SLH-DSA-SHA2-128f public key
-    private_key: &[0u8; 64],   // Approximate size for SLH-DSA-SHA2-128f private key
-    message: &[0u8; 32],       // Sample message
-    signature: &[0u8; 7856],   // Approximate size for SLH-DSA-SHA2-128f signature
+    public_key: &[0u8; 32], // Approximate size for SLH-DSA-SHA2-128f public key
+    private_key: &[0u8; 64], // Approximate size for SLH-DSA-SHA2-128f private key
+    message: &[0u8; 32],    // Sample message
+    signature: &[0u8; 7856], // Approximate size for SLH-DSA-SHA2-128f signature
 };
 
 // SLH-DSA-SHA2-256f test vector (placeholder)
 pub const SLH_DSA_SHA2_256F_TEST_VECTOR: SlhDsaTestVector = SlhDsaTestVector {
     security_level: SlhDsaSecurityLevel::Level5,
-    public_key: &[0u8; 64],    // Approximate size for SLH-DSA-SHA2-256f public key
-    private_key: &[0u8; 128],  // Approximate size for SLH-DSA-SHA2-256f private key
-    message: &[0u8; 32],       // Sample message
-    signature: &[0u8; 29792],  // Approximate size for SLH-DSA-SHA2-256f signature
+    public_key: &[0u8; 64], // Approximate size for SLH-DSA-SHA2-256f public key
+    private_key: &[0u8; 128], // Approximate size for SLH-DSA-SHA2-256f private key
+    message: &[0u8; 32],    // Sample message
+    signature: &[0u8; 29792], // Approximate size for SLH-DSA-SHA2-256f signature
 };

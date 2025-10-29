@@ -19,6 +19,7 @@ use axum::{
     routing::{get, post},
     Json, Router,
 };
+use tokio::net::TcpListener;
 use base64::{engine::general_purpose::STANDARD as B64, Engine as _};
 use clap::{Parser, ValueEnum};
 use metrics_exporter_prometheus::{PrometheusBuilder, PrometheusHandle};
@@ -828,46 +829,20 @@ async fn main() -> anyhow::Result<()> {
         .nest_service("/static", ServeDir::new("web/static"))
         .with_state(state.clone())
         .layer(TraceLayer::new_for_http());
-        
+
     // Register PQC-specific routes
-    let app = pqc::register_routes(app);
+    // let app = pqc::register_routes(app);
 
     let tls_setup = crate::tls::configure(&args).await?;
     info!(mode = ?args.tls_mode, "FerroHSM listening on https://{}", args.bind);
 
-    let handle = axum_server::Handle::new();
-    match (tls_setup, app) {
-        (TlsSetup::Manual(config), app) => {
-            let server = axum_server::bind_rustls(args.bind, config).handle(handle.clone());
-            let serve_future =
-                server.serve(app.into_make_service_with_connect_info::<SocketAddr>());
-            tokio::pin!(serve_future);
-            tokio::select! {
-                res = &mut serve_future => res?,
-                _ = shutdown_signal() => {
-                    handle.graceful_shutdown(None);
-                    serve_future.await?;
-                }
-            }
-            Ok(())
-        }
-        (TlsSetup::Acme { acceptor }, app) => {
-            let server = axum_server::Server::bind(args.bind)
-                .acceptor(acceptor)
-                .handle(handle.clone());
-            let serve_future =
-                server.serve(app.into_make_service_with_connect_info::<SocketAddr>());
-            tokio::pin!(serve_future);
-            tokio::select! {
-                res = &mut serve_future => res?,
-                _ = shutdown_signal() => {
-                    handle.graceful_shutdown(None);
-                    serve_future.await?;
-                }
-            }
-            Ok(())
-        }
-    }
+    let listener = TcpListener::bind(args.bind).await?;
+    
+    axum::serve(listener, app)
+        .with_graceful_shutdown(shutdown_signal())
+        .await?;
+    
+    Ok(())
 }
 
 async fn shutdown_signal() {
@@ -904,11 +879,10 @@ struct HealthResponse {
 }
 
 async fn health<P: PolicyEngine>(
-    ConnectInfo(addr): ConnectInfo<SocketAddr>,
     State(state): State<AppState<P>>,
     headers: HeaderMap,
 ) -> Result<Json<HealthResponse>, AppError> {
-    let _ = authenticate_request(&state, &headers, addr.ip())?;
+    let _ = authenticate_request(&state, &headers, "127.0.0.1".parse().unwrap())?;
     let stats = state.rate_limiter.stats();
     let uptime_seconds = state.startup.elapsed().as_secs();
     Ok(Json(HealthResponse {

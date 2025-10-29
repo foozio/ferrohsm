@@ -1565,7 +1565,7 @@ dependencies = [
 
 [[package]]
 name = "hsm-cli"
-version = "0.2.0"
+version = "0.2.1"
 dependencies = [
  "anyhow",
  "base64",
@@ -1583,7 +1583,7 @@ dependencies = [
 
 [[package]]
 name = "hsm-core"
-version = "0.2.0"
+version = "0.2.1"
 dependencies = [
  "aes-gcm",
  "anyhow",
@@ -1594,14 +1594,17 @@ dependencies = [
  "fs2",
  "hex",
  "hmac",
+ "ml-dsa",
  "oqs",
  "p256",
  "p384",
  "parking_lot",
+ "pkcs8",
  "rand 0.8.5",
  "ring",
  "rsa",
  "rusqlite",
+ "sec1",
  "serde",
  "serde_json",
  "serde_yaml",
@@ -1615,7 +1618,7 @@ dependencies = [
 
 [[package]]
 name = "hsm-pkcs11"
-version = "0.2.0"
+version = "0.2.1"
 dependencies = [
  "anyhow",
  "cryptoki",
@@ -1629,7 +1632,7 @@ dependencies = [
 
 [[package]]
 name = "hsm-server"
-version = "0.2.0"
+version = "0.2.1"
 dependencies = [
  "anyhow",
  "axum",
@@ -1728,6 +1731,15 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "6cb51c9a029ddc91b07a787f1d86b53ccfa49b0e86688c946ebe8d3555685dd7"
 dependencies = [
  "libm",
+]
+
+[[package]]
+name = "hybrid-array"
+version = "0.3.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "891d15931895091dea5c47afa5b3c9a01ba634b311919fd4d41388fa0e3d76af"
+dependencies = [
+ "typenum",
 ]
 
 [[package]]
@@ -2072,6 +2084,15 @@ dependencies = [
 ]
 
 [[package]]
+name = "keccak"
+version = "0.1.5"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "ecc2af9a1119c51f12a14607e783cb977bde58bc069ff0c3da1095e635d70654"
+dependencies = [
+ "cpufeatures",
+]
+
+[[package]]
 name = "lazy_static"
 version = "1.5.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -2273,6 +2294,21 @@ dependencies = [
  "libc",
  "wasi",
  "windows-sys 0.61.2",
+]
+
+[[package]]
+name = "ml-dsa"
+version = "0.0.4"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "ac4a46643af2001eafebcc37031fc459eb72d45057aac5d7a15b00046a2ad6db"
+dependencies = [
+ "const-oid",
+ "hybrid-array",
+ "num-traits",
+ "pkcs8",
+ "rand_core 0.6.4",
+ "sha3",
+ "signature",
 ]
 
 [[package]]
@@ -3523,6 +3559,16 @@ dependencies = [
  "cfg-if",
  "cpufeatures",
  "digest",
+]
+
+[[package]]
+name = "sha3"
+version = "0.10.8"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "75872d278a8f37ef87fa0ddbda7802605cb18344497949862c0d4dcb291eba60"
+dependencies = [
+ "digest",
+ "keccak",
 ]
 
 [[package]]

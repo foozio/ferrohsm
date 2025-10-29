@@ -9,8 +9,12 @@ use axum::{
     Router,
 };
 use base64::{engine::general_purpose::STANDARD as B64, Engine as _};
+#[cfg(feature = "pqc")]
 use hsm_core::{
-    crypto::pqc::{PqKeyAlgorithm, PqSecurityLevel},
+    crypto::pqc::{PqKeyAlgorithm, MlKemSecurityLevel, MlDsaSecurityLevel, SlhDsaSecurityLevel},
+};
+
+use hsm_core::{
     KeyAlgorithm, KeyGenerationRequest, KeyUsage, OperationContext,
 };
 use serde::{Deserialize, Serialize};
@@ -20,19 +24,21 @@ use crate::{authenticate_request, AppError, AppState, KeySummary};
 
 // Request and response types for PQC operations
 
+#[cfg(feature = "pqc")]
 #[derive(Debug, Deserialize)]
 pub struct CreatePqKeyRequest {
     pub algorithm: PqKeyAlgorithm,
-    pub security_level: Option<PqSecurityLevel>,
+    pub security_level: Option<MlKemSecurityLevel>, // Default to MlKemSecurityLevel for now
     pub usage: KeyUsage,
     pub policy_tags: Option<Vec<String>>,
     pub description: Option<String>,
 }
 
+#[cfg(feature = "pqc")]
 #[derive(Debug, Deserialize)]
 pub struct CreateHybridKeyRequest {
     pub pq_algorithm: PqKeyAlgorithm,
-    pub security_level: Option<PqSecurityLevel>,
+    pub security_level: Option<MlKemSecurityLevel>, // Default to MlKemSecurityLevel for now
     pub classic_algorithm: KeyAlgorithm,
     pub usage: KeyUsage,
     pub policy_tags: Option<Vec<String>>,
@@ -56,7 +62,10 @@ pub struct PqDecapsulateResponse {
 }
 
 // Register PQC routes with the main application router
-pub fn register_routes<P: hsm_core::PolicyEngine + 'static>(router: Router<AppState<P>>) -> Router<AppState<P>> {
+#[cfg(feature = "pqc")]
+pub fn register_routes<P: hsm_core::PolicyEngine + 'static>(
+    router: Router<AppState<P>>,
+) -> Router<AppState<P>> {
     router
         // PQC key management
         .route("/api/v1/keys/pqc", post(create_pq_key::<P>))
@@ -66,8 +75,16 @@ pub fn register_routes<P: hsm_core::PolicyEngine + 'static>(router: Router<AppSt
         .route("/api/v1/keys/:id/decapsulate", post(decapsulate::<P>))
 }
 
+#[cfg(not(feature = "pqc"))]
+pub fn register_routes<P: hsm_core::PolicyEngine + 'static>(
+    router: Router<AppState<P>>,
+) -> Router<AppState<P>> {
+    router
+}
+
 // Handler implementations
 
+#[cfg(feature = "pqc")]
 async fn create_pq_key<P: hsm_core::PolicyEngine>(
     ConnectInfo(addr): ConnectInfo<SocketAddr>,
     State(state): State<AppState<P>>,
@@ -75,26 +92,46 @@ async fn create_pq_key<P: hsm_core::PolicyEngine>(
     Json(payload): Json<CreatePqKeyRequest>,
 ) -> Result<Json<KeySummary>, AppError> {
     let ctx = authenticate_request(&state, &headers, addr.ip())?;
-    
+
     // Map PqKeyAlgorithm to KeyAlgorithm
     let algorithm = match payload.algorithm {
-        PqKeyAlgorithm::MlKem => KeyAlgorithm::MlKem(payload.security_level.unwrap_or_default()),
-        PqKeyAlgorithm::MlDsa => KeyAlgorithm::MlDsa(payload.security_level.unwrap_or_default()),
-        PqKeyAlgorithm::SlhDsa => KeyAlgorithm::SlhDsa(payload.security_level.unwrap_or_default()),
-        _ => return Err(AppError::bad_request("Hybrid algorithms require using the hybrid endpoint")),
+        PqKeyAlgorithm::MlKem(security_level) => match security_level {
+            MlKemSecurityLevel::MlKem512 => KeyAlgorithm::MlKem512,
+            MlKemSecurityLevel::MlKem768 => KeyAlgorithm::MlKem768,
+            MlKemSecurityLevel::MlKem1024 => KeyAlgorithm::MlKem1024,
+        },
+        PqKeyAlgorithm::MlDsa(security_level) => match security_level {
+            MlDsaSecurityLevel::MlDsa44 => KeyAlgorithm::MlDsa44,
+            MlDsaSecurityLevel::MlDsa65 => KeyAlgorithm::MlDsa65,
+            MlDsaSecurityLevel::MlDsa87 => KeyAlgorithm::MlDsa87,
+        },
+        PqKeyAlgorithm::SlhDsa(security_level) => match security_level {
+            SlhDsaSecurityLevel::SlhDsaSha2128f => KeyAlgorithm::SlhDsa128f,
+            SlhDsaSecurityLevel::SlhDsaSha2128s => KeyAlgorithm::SlhDsa128s,
+            SlhDsaSecurityLevel::SlhDsaSha2192f => KeyAlgorithm::SlhDsa192f,
+            SlhDsaSecurityLevel::SlhDsaSha2192s => KeyAlgorithm::SlhDsa192s,
+            SlhDsaSecurityLevel::SlhDsaSha2256f => KeyAlgorithm::SlhDsa256f,
+            SlhDsaSecurityLevel::SlhDsaSha2256s => KeyAlgorithm::SlhDsa256s,
+        },
+        _ => {
+            return Err(AppError::bad_request(
+                "Hybrid algorithms require using the hybrid endpoint",
+            ))
+        }
     };
-    
+
     let req = KeyGenerationRequest {
         algorithm,
         usage: payload.usage,
         policy_tags: payload.policy_tags.unwrap_or_default(),
         description: payload.description,
     };
-    
+
     let meta = state.manager.generate_key(req, &ctx)?;
     Ok(Json(KeySummary::from(meta)))
 }
 
+#[cfg(feature = "pqc")]
 async fn create_hybrid_key<P: hsm_core::PolicyEngine>(
     ConnectInfo(addr): ConnectInfo<SocketAddr>,
     State(state): State<AppState<P>>,
@@ -102,47 +139,52 @@ async fn create_hybrid_key<P: hsm_core::PolicyEngine>(
     Json(payload): Json<CreateHybridKeyRequest>,
 ) -> Result<Json<KeySummary>, AppError> {
     let ctx = authenticate_request(&state, &headers, addr.ip())?;
-    
+
     // Create the appropriate hybrid algorithm
     let algorithm = match payload.pq_algorithm {
-        PqKeyAlgorithm::MlKemWithP256 => {
-            if payload.classic_algorithm != KeyAlgorithm::EcP256 {
-                return Err(AppError::bad_request("MlKemWithP256 requires EcP256 as classic algorithm"));
+        PqKeyAlgorithm::HybridEcdhMlKem(KeyAlgorithm::P256, security_level) => {
+            match security_level {
+                MlKemSecurityLevel::MlKem512 => KeyAlgorithm::HybridP256MlKem512,
+                MlKemSecurityLevel::MlKem768 => KeyAlgorithm::HybridP256MlKem768,
+                MlKemSecurityLevel::MlKem1024 => KeyAlgorithm::HybridP384MlKem1024,
             }
-            KeyAlgorithm::MlKemWithP256(payload.security_level.unwrap_or_default())
-        },
-        PqKeyAlgorithm::MlKemWithP384 => {
-            if payload.classic_algorithm != KeyAlgorithm::EcP384 {
-                return Err(AppError::bad_request("MlKemWithP384 requires EcP384 as classic algorithm"));
+        }
+        PqKeyAlgorithm::HybridEcdhMlKem(KeyAlgorithm::P384, security_level) => {
+            match security_level {
+                MlKemSecurityLevel::MlKem512 => KeyAlgorithm::HybridP256MlKem512,
+                MlKemSecurityLevel::MlKem768 => KeyAlgorithm::HybridP256MlKem768,
+                MlKemSecurityLevel::MlKem1024 => KeyAlgorithm::HybridP384MlKem1024,
             }
-            KeyAlgorithm::MlKemWithP384(payload.security_level.unwrap_or_default())
-        },
-        PqKeyAlgorithm::MlDsaWithP256 => {
-            if payload.classic_algorithm != KeyAlgorithm::EcP256 {
-                return Err(AppError::bad_request("MlDsaWithP256 requires EcP256 as classic algorithm"));
+        }
+        PqKeyAlgorithm::HybridEcdsaMlDsa(KeyAlgorithm::P256, security_level) => {
+            match security_level {
+                MlDsaSecurityLevel::MlDsa44 => KeyAlgorithm::HybridP256MlDsa44,
+                MlDsaSecurityLevel::MlDsa65 => KeyAlgorithm::HybridP256MlDsa65,
+                MlDsaSecurityLevel::MlDsa87 => KeyAlgorithm::HybridP384MlDsa87,
             }
-            KeyAlgorithm::MlDsaWithP256(payload.security_level.unwrap_or_default())
-        },
-        PqKeyAlgorithm::MlDsaWithP384 => {
-            if payload.classic_algorithm != KeyAlgorithm::EcP384 {
-                return Err(AppError::bad_request("MlDsaWithP384 requires EcP384 as classic algorithm"));
+        }
+        PqKeyAlgorithm::HybridEcdsaMlDsa(KeyAlgorithm::P384, security_level) => {
+            match security_level {
+                MlDsaSecurityLevel::MlDsa44 => KeyAlgorithm::HybridP256MlDsa44,
+                MlDsaSecurityLevel::MlDsa65 => KeyAlgorithm::HybridP256MlDsa65,
+                MlDsaSecurityLevel::MlDsa87 => KeyAlgorithm::HybridP384MlDsa87,
             }
-            KeyAlgorithm::MlDsaWithP384(payload.security_level.unwrap_or_default())
-        },
-        _ => return Err(AppError::bad_request("Not a hybrid algorithm")),
+        }
+        _ => return Err(AppError::bad_request("Not a supported hybrid algorithm")),
     };
-    
+
     let req = KeyGenerationRequest {
         algorithm,
         usage: payload.usage,
         policy_tags: payload.policy_tags.unwrap_or_default(),
         description: payload.description,
     };
-    
+
     let meta = state.manager.generate_key(req, &ctx)?;
     Ok(Json(KeySummary::from(meta)))
 }
 
+#[cfg(feature = "pqc")]
 async fn encapsulate<P: hsm_core::PolicyEngine>(
     ConnectInfo(addr): ConnectInfo<SocketAddr>,
     State(state): State<AppState<P>>,
@@ -150,11 +192,17 @@ async fn encapsulate<P: hsm_core::PolicyEngine>(
     AxumPath(id): AxumPath<String>,
 ) -> Result<Json<PqEncapsulateResponse>, AppError> {
     let ctx = authenticate_request(&state, &headers, addr.ip())?;
-    
-    let operation = hsm_core::CryptoOperation::Encapsulate {};
-    let result = state.manager.perform_operation(&id, operation, &ctx, &OperationContext::new())?;
-    
-    if let hsm_core::KeyOperationResult::Encapsulated { ciphertext, shared_secret } = result {
+
+    let operation = hsm_core::CryptoOperation::KemEncapsulate { recipient_public_key: None };
+    let result = state
+        .manager
+        .perform_operation(&id, operation, &ctx, &OperationContext::new())?;
+
+    if let hsm_core::KeyOperationResult::KemEncapsulated {
+        ciphertext,
+        shared_secret,
+    } = result
+    {
         Ok(Json(PqEncapsulateResponse {
             ciphertext_b64: B64.encode(ciphertext),
             shared_secret_b64: B64.encode(shared_secret),
@@ -164,6 +212,7 @@ async fn encapsulate<P: hsm_core::PolicyEngine>(
     }
 }
 
+#[cfg(feature = "pqc")]
 async fn decapsulate<P: hsm_core::PolicyEngine>(
     ConnectInfo(addr): ConnectInfo<SocketAddr>,
     State(state): State<AppState<P>>,
@@ -172,7 +221,7 @@ async fn decapsulate<P: hsm_core::PolicyEngine>(
     Json(payload): Json<PqDecapsulateRequest>,
 ) -> Result<Json<PqDecapsulateResponse>, AppError> {
     let ctx = authenticate_request(&state, &headers, addr.ip())?;
-    
+
     // Validate payload size before decoding
     if payload.ciphertext_b64.len() > 10_000_000 {
         return Err(AppError::bad_request("ciphertext too large"));
@@ -181,11 +230,13 @@ async fn decapsulate<P: hsm_core::PolicyEngine>(
     let ciphertext = B64
         .decode(&payload.ciphertext_b64)
         .map_err(|_| AppError::bad_request("invalid base64 ciphertext"))?;
-    
-    let operation = hsm_core::CryptoOperation::Decapsulate { ciphertext };
-    let result = state.manager.perform_operation(&id, operation, &ctx, &OperationContext::new())?;
-    
-    if let hsm_core::KeyOperationResult::Decapsulated { shared_secret } = result {
+
+    let operation = hsm_core::CryptoOperation::KemDecapsulate { ciphertext };
+    let result = state
+        .manager
+        .perform_operation(&id, operation, &ctx, &OperationContext::new())?;
+
+    if let hsm_core::KeyOperationResult::KemDecapsulated { shared_secret } = result {
         Ok(Json(PqDecapsulateResponse {
             shared_secret_b64: B64.encode(shared_secret),
         }))

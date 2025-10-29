@@ -2,7 +2,7 @@ use serde::{Deserialize, Serialize};
 use time::{Duration, OffsetDateTime};
 use uuid::Uuid;
 
-use crate::{attributes::AttributeSet, rbac::Role};
+use crate::{attributes::AttributeSet, rbac::Role, HsmError, HsmResult};
 
 pub type KeyId = String;
 
@@ -14,25 +14,25 @@ pub enum KeyAlgorithm {
     P256,
     P384,
     // Post-quantum algorithms
-    MlKem512,    // ML-KEM-512 (Kyber)
-    MlKem768,    // ML-KEM-768 (Kyber)
-    MlKem1024,   // ML-KEM-1024 (Kyber)
-    MlDsa44,     // ML-DSA-44 (Dilithium)
-    MlDsa65,     // ML-DSA-65 (Dilithium)
-    MlDsa87,     // ML-DSA-87 (Dilithium)
-    SlhDsa128f,  // SLH-DSA-SHA2-128f (SPHINCS+)
-    SlhDsa128s,  // SLH-DSA-SHA2-128s (SPHINCS+)
-    SlhDsa192f,  // SLH-DSA-SHA2-192f (SPHINCS+)
-    SlhDsa192s,  // SLH-DSA-SHA2-192s (SPHINCS+)
-    SlhDsa256f,  // SLH-DSA-SHA2-256f (SPHINCS+)
-    SlhDsa256s,  // SLH-DSA-SHA2-256s (SPHINCS+)
+    MlKem512,   // ML-KEM-512 (Kyber)
+    MlKem768,   // ML-KEM-768 (Kyber)
+    MlKem1024,  // ML-KEM-1024 (Kyber)
+    MlDsa44,    // ML-DSA-44 (Dilithium)
+    MlDsa65,    // ML-DSA-65 (Dilithium)
+    MlDsa87,    // ML-DSA-87 (Dilithium)
+    SlhDsa128f, // SLH-DSA-SHA2-128f (SPHINCS+)
+    SlhDsa128s, // SLH-DSA-SHA2-128s (SPHINCS+)
+    SlhDsa192f, // SLH-DSA-SHA2-192f (SPHINCS+)
+    SlhDsa192s, // SLH-DSA-SHA2-192s (SPHINCS+)
+    SlhDsa256f, // SLH-DSA-SHA2-256f (SPHINCS+)
+    SlhDsa256s, // SLH-DSA-SHA2-256s (SPHINCS+)
     // Hybrid algorithms
-    HybridP256MlKem512,   // P-256 + ML-KEM-512
-    HybridP256MlKem768,   // P-256 + ML-KEM-768
-    HybridP384MlKem1024,  // P-384 + ML-KEM-1024
-    HybridP256MlDsa44,    // P-256 + ML-DSA-44
-    HybridP256MlDsa65,    // P-256 + ML-DSA-65
-    HybridP384MlDsa87,    // P-384 + ML-DSA-87
+    HybridP256MlKem512,  // P-256 + ML-KEM-512
+    HybridP256MlKem768,  // P-256 + ML-KEM-768
+    HybridP384MlKem1024, // P-384 + ML-KEM-1024
+    HybridP256MlDsa44,   // P-256 + ML-DSA-44
+    HybridP256MlDsa65,   // P-256 + ML-DSA-65
+    HybridP384MlDsa87,   // P-384 + ML-DSA-87
 }
 
 impl KeyAlgorithm {
@@ -103,9 +103,18 @@ impl KeyAlgorithm {
     /// Get the security level of the algorithm
     pub fn security_level(&self) -> u32 {
         match self {
-            KeyAlgorithm::MlKem512 | KeyAlgorithm::MlDsa44 | KeyAlgorithm::SlhDsa128f | KeyAlgorithm::SlhDsa128s => 1,
-            KeyAlgorithm::MlKem768 | KeyAlgorithm::MlDsa65 | KeyAlgorithm::SlhDsa192f | KeyAlgorithm::SlhDsa192s => 3,
-            KeyAlgorithm::MlKem1024 | KeyAlgorithm::MlDsa87 | KeyAlgorithm::SlhDsa256f | KeyAlgorithm::SlhDsa256s => 5,
+            KeyAlgorithm::MlKem512
+            | KeyAlgorithm::MlDsa44
+            | KeyAlgorithm::SlhDsa128f
+            | KeyAlgorithm::SlhDsa128s => 1,
+            KeyAlgorithm::MlKem768
+            | KeyAlgorithm::MlDsa65
+            | KeyAlgorithm::SlhDsa192f
+            | KeyAlgorithm::SlhDsa192s => 3,
+            KeyAlgorithm::MlKem1024
+            | KeyAlgorithm::MlDsa87
+            | KeyAlgorithm::SlhDsa256f
+            | KeyAlgorithm::SlhDsa256s => 5,
             KeyAlgorithm::HybridP256MlKem512 | KeyAlgorithm::HybridP256MlDsa44 => 1,
             KeyAlgorithm::HybridP256MlKem768 | KeyAlgorithm::HybridP256MlDsa65 => 3,
             KeyAlgorithm::HybridP384MlKem1024 | KeyAlgorithm::HybridP384MlDsa87 => 5,
@@ -240,6 +249,40 @@ pub enum KeyMaterialType {
     HybridP256MlDsa44,
     HybridP256MlDsa65,
     HybridP384MlDsa87,
+}
+
+impl std::fmt::Display for KeyMaterialType {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "{:?}", self)
+    }
+}
+
+impl KeyMaterialType {
+    pub fn from_algorithm(algorithm: &str) -> HsmResult<Self> {
+        match algorithm {
+            "MlKem512" => Ok(KeyMaterialType::MlKem512),
+            "MlKem768" => Ok(KeyMaterialType::MlKem768),
+            "MlKem1024" => Ok(KeyMaterialType::MlKem1024),
+            "MlDsa44" => Ok(KeyMaterialType::MlDsa44),
+            "MlDsa65" => Ok(KeyMaterialType::MlDsa65),
+            "MlDsa87" => Ok(KeyMaterialType::MlDsa87),
+            "SlhDsaShake256f" => Ok(KeyMaterialType::SlhDsa256f),
+            _ => Err(HsmError::UnsupportedAlgorithm(algorithm.to_string())),
+        }
+    }
+
+    pub fn from_hybrid_algorithm(
+        ec_curve: &KeyMaterialType,
+        pq_algorithm: &str,
+    ) -> HsmResult<Self> {
+        match (ec_curve, pq_algorithm) {
+            (KeyMaterialType::EcP256, "MlKem768") => Ok(KeyMaterialType::HybridP256MlKem768),
+            _ => Err(HsmError::UnsupportedAlgorithm(format!(
+                "Hybrid: {:?}+{}",
+                ec_curve, pq_algorithm
+            ))),
+        }
+    }
 }
 
 #[derive(Debug, Clone)]

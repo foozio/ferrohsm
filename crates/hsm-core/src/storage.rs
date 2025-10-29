@@ -10,6 +10,8 @@ use rand::{rngs::OsRng, RngCore};
 use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
 
+use crate::attributes::AttributeSet;
+
 use parking_lot::{Mutex as ParkingMutex, RwLock};
 use rusqlite::{params, Connection, OptionalExtension};
 
@@ -155,15 +157,14 @@ impl FileKeyStore {
         };
 
         let mut results = Vec::new();
-        let conn = self.conn.lock();
+
         for (key_id, version) in candidates {
-            if let Ok(record) = self.fetch_version_internal(&conn, &key_id, version) {
+            if let Ok(record) = self.fetch_version(&key_id, version) {
                 if record.metadata.attributes.matches_template(template) {
                     results.push(record);
                 }
             }
         }
-        drop(conn);
         Ok(results)
     }
 
@@ -416,17 +417,15 @@ impl MemoryKeyStore {
 
     fn rebuild_index(&self, map: &HashMap<KeyId, Vec<KeyRecord>>) {
         let mut index = self.index.write();
-        index.rebuild_from_iter(
-            map.iter().flat_map(|(key_id, versions)| {
-                versions.iter().map(move |record| {
-                    (
-                        key_id.clone(),
-                        record.metadata.version,
-                        record.metadata.attributes.clone(),
-                    )
-                })
-            }),
-        );
+        index.rebuild_from_iter(map.iter().flat_map(|(key_id, versions)| {
+            versions.iter().map(move |record| {
+                (
+                    key_id.clone(),
+                    record.metadata.version,
+                    record.metadata.attributes.clone(),
+                )
+            })
+        }));
     }
 
     pub fn find_by_attributes(&self, template: &AttributeTemplate) -> HsmResult<Vec<KeyRecord>> {
@@ -748,7 +747,6 @@ impl KeyStore for SqliteKeyStore {
         let tx = conn.transaction().map_err(HsmError::storage)?;
         self.store_internal(&tx, &record)?;
         tx.commit().map_err(HsmError::storage)?;
-        drop(conn);
         self.rebuild_index()?;
         Ok(())
     }

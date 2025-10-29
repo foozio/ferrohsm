@@ -10,8 +10,11 @@ pub mod error;
 pub mod fs_utils;
 pub mod models;
 pub mod policy;
+#[cfg(feature = "pqc")]
 pub mod pqc;
+#[cfg(feature = "pqc")]
 pub mod pqc_policy;
+#[cfg(feature = "pqc")]
 pub mod pqc_provider;
 pub mod rbac;
 pub mod retention;
@@ -35,6 +38,25 @@ pub use models::{
     KeyMaterialType, KeyMetadata, KeyPurpose, KeyState, KeyUsage, OperationContext, TamperStatus,
 };
 pub use policy::{DefaultPolicyEngine, PolicyDecision, PolicyEngine};
+#[cfg(not(feature = "pqc"))]
+pub struct PqcPolicyController;
+#[cfg(not(feature = "pqc"))]
+impl PqcPolicyController {
+    pub fn is_authorized(&self, _ctx: &AuthContext, _algorithm: &KeyAlgorithm) -> bool {
+        true
+    }
+
+    pub fn get_policy_tags(&self, _algorithm: &KeyAlgorithm) -> Vec<String> {
+        Vec::new()
+    }
+}
+#[cfg(not(feature = "pqc"))]
+impl Default for PqcPolicyController {
+    fn default() -> Self {
+        PqcPolicyController
+    }
+}
+#[cfg(feature = "pqc")]
 pub use pqc_policy::PqcPolicyController;
 pub use rbac::{Action, RbacAuthorizer, Role};
 pub use retention::{RetentionLedger, RetentionLedgerEntry, RetentionPolicy};
@@ -234,11 +256,11 @@ where
             return Err(HsmError::KeyInactive(record.metadata.state));
         }
         let action = operation.as_action();
-        
+
         // Apply PQC-specific policy controls if applicable
         if record.metadata.algorithm.is_post_quantum() || record.metadata.algorithm.is_hybrid() {
             let pqc_controller = PqcPolicyController::default();
-            
+
             // Check if the user is authorized to use this PQC algorithm
             if !pqc_controller.is_authorized(ctx, &record.metadata.algorithm) {
                 return Err(HsmError::Authorization(format!(
@@ -246,17 +268,17 @@ where
                     record.metadata.algorithm
                 )));
             }
-            
+
             // Add PQC-specific policy tags for authorization
             let mut policy_tags = record.metadata.policy_tags.clone();
             policy_tags.extend(pqc_controller.get_policy_tags(&record.metadata.algorithm));
-            
+
             self.authorize(ctx, &action, &policy_tags, Some(key_id))?;
         } else {
             // Standard authorization for non-PQC algorithms
             self.authorize(ctx, &action, &record.metadata.policy_tags, Some(key_id))?;
         }
-        
+
         let material = self.crypto.open_key(&record)?;
         let result = self.crypto.perform(operation.clone(), &material, op_ctx)?;
         self.audit.record(AuditRecord::new(

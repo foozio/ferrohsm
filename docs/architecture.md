@@ -39,7 +39,7 @@
 ```
 
 ### Crate Overview
-- **`hsm-core`**: implements key lifecycle management, algorithm providers (AES-256-GCM, RSA-2048/4096, P-256/P-384), authorization policies, tamper-evident storage (HMAC over sealed blobs), audit logging, and extensibility hooks.
+- **`hsm-core`**: implements key lifecycle management, PKCS#11-aligned attribute storage (`AttributeSet`) with per-backend indexes, algorithm providers (AES-256-GCM, RSA-2048/4096, P-256/P-384), authorization policies, tamper-evident storage (HMAC over sealed blobs), audit logging, and extensibility hooks.
 - **`hsm-server`**: exposes REST (and future PKCS#11) endpoints via Axum, performs TLS 1.3 termination with the `rustls` ring provider (manual PEM reloads with automatic OCSP retrieval/stapling or automated ACME lifecycle via `rustls-acme`), validates JWT bearer tokens using reloadable keysets (HS256/RS256/ES256), applies per-actor rate limiting, persists dual-control approvals, hosts the web UI (Tera templated dashboard with approvals queue, audit tail, and metrics cards), and orchestrates policy enforcement.
 - **`hsm-cli`**: secure administrative CLI that authenticates using mutual TLS and/or short-lived JWTs it can mint locally, supporting workflows (initialize, rotate, approve, audit).
 - **`web/static`**: static assets for the embedded management UI (progressive enhancement, CSP enforced via headers).
@@ -47,7 +47,7 @@
 ## Trust Boundaries & Isolation Layers
 1. **Network Boundary:** TLS 1.3 with optional mutual authentication. Operators may pin static PEMs while FerroHSM auto-fetches and staples OCSP responses on configurable intervals, or delegate issuance/renewal to Let's Encrypt via ACME (staging/production directories cached under `--acme-cache-dir`) with the same OCSP refresh guarantees. Rustls enforces modern cipher suites (ECDHE + AES-GCM/CHACHA20-POLY1305).
 2. **Gateway Boundary:** Authentication layer validates JWTs (HS256, RS256, ES256) issued by trusted tooling, auto-reloads keysets for rotation, enforces issuer claims, and optionally binds identities to presented client certificates. Requests are mapped to RBAC roles (`Administrator`, `Operator`, `Auditor`, `Service`) and throttled via a token-bucket rate limiter per actor backed by a bounded LRU store (4096 actors with 5-minute idle eviction) to mitigate cache-amplified DoS attempts.
-3. **Policy Boundary:** Policy evaluation occurs before invoking cryptographic primitives. Policy scripts are sandboxed (Wasm/Lua hooks) with timeouts and capability restrictions.
+3. **Policy & Session Boundary:** Policy evaluation occurs before invoking cryptographic primitives. Session state is managed by the new `SessionManager`, which tracks PKCS#11-style slots, search cursors, and hardware adapters without exposing raw key material. Policy scripts are sandboxed (Wasm/Lua hooks) with timeouts and capability restrictions.
 4. **Core Boundary:** `hsm-core` is the sole module with direct access to key material. All responses pass through a zeroisation boundary that wipes memory after use.
 5. **Storage Boundary:** Keys are encrypted-at-rest using operator-provisioned 32-byte secrets (`--master-key` and `--hmac-key`) supplied at startup. Every blob includes integrity metadata (HMAC, version counter, monotonic clock) to detect tampering.
 

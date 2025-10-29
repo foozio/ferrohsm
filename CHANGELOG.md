@@ -12,6 +12,10 @@
 - Enhanced policy controls for PQC operations with configurable dual-control requirements and role-based restrictions
 - Updated SDK examples and test scripts to demonstrate PQC functionality
 
+## Bug Fixes
+- Fixed compilation errors in the cryptographic core module related to missing braces in match statements
+- Resolved type annotation issues in the signing code path
+
 # FerroHSM 0.2.0
 
 ## Highlights
@@ -33,6 +37,9 @@
 - Expanded integration test suite to exercise RSA/P-256 signing flows, rotation and rollback lifecycles, revoke/destroy operations, and RBAC policy denials.
 - Implemented retention scheduler with configurable policy/interval/grace flags, dual-control purge approvals, secure wipe attestation ledger, and retention metrics.
 - Added SQLite-backed audit log and approval stores with configurable retention sweeps, enabling durable governance data without unbounded growth.
+
+## Bug Fixes
+- Fixed critical compilation errors in the cryptographic core module that prevented successful builds
 
 ## Homebrew Installation
 

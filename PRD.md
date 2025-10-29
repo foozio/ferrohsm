@@ -41,6 +41,7 @@ FerroHSM is a software hardware security module that offers secure key lifecycle
    - List and describe keys with version, state, usage, and tags, supporting pagination, filtering, and cached responses for responsive dashboards.
    - Rotate keys while preserving identifiers and immutable metadata history, support promoting historical versions (rollback), and enforce retention/archival windows defined per policy tag.
    - Revoke and destroy keys with tamper-evident audit entries.
+   - Persist PKCS#11-aligned attribute metadata (`AttributeSet`) alongside each key to support future discovery, session scoping, and interoperability while remaining backwards compatible with existing clients.
 2. **Cryptographic Operations**
    - Perform encrypt/decrypt (AES-256-GCM) with optional associated data.
    - Sign/verify payloads for RSA and EC keys (DER signatures).
@@ -65,6 +66,7 @@ FerroHSM is a software hardware security module that offers secure key lifecycle
    - Runtime-selectable TLS provisioning: manual PEMs with hot reload/OCSP stapling or automated ACME issuance/renewal with cache-backed key retention.
 6. **Storage Backends**
    - `KeyStore` trait must allow multiple implementations shipped in-tree (filesystem, SQLite, in-memory) with consistent semantics for versioning, purge, and rollback.
+   - Maintain attribute indexes in each backend (in-memory, filesystem, SQLite) so attribute-based lookups remain efficient as PKCS#11 compatibility lands.
    - Provide adapter interface (`RemoteKeyVault` + `RemoteKeyStore`) enabling future cloud KMS/HSM integrations without altering policy or audit layers.
 
 ## 5. Non-Functional Requirements

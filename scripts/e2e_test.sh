@@ -289,35 +289,7 @@ run_cli_tests() {
         return 1
     fi
 
-    # Test 14: Post-quantum cryptography operations
-    log_info "Test 14: Testing post-quantum cryptographic operations"
-    PQC_OUTPUT=$($CLI_CMD create --algorithm dilithium5 --usage sign,verify --tags pqc,quantum_resistant)
-    if echo "$PQC_OUTPUT" | grep -q "Created key"; then
-        PQC_KEY_ID=$(echo "$PQC_OUTPUT" | grep "Created key" | sed 's/.*Created key //' | cut -d' ' -f1)
-        log_info "✓ Created PQC key: $PQC_KEY_ID"
-        
-        # Test PQC signing
-        PQC_SIGN_DATA="Post-quantum cryptography test message"
-        PQC_SIGN_OUTPUT=$($CLI_CMD sign --key-id "$PQC_KEY_ID" --data "$PQC_SIGN_DATA")
-        if echo "$PQC_SIGN_OUTPUT" | grep -q "Signature"; then
-            PQC_SIGNATURE_B64=$(echo "$PQC_SIGN_OUTPUT" | grep "Signature" | sed 's/.*Signature //' | cut -d' ' -f1)
-            log_info "✓ PQC signing successful"
-            
-            # Verify PQC signature
-            PQC_VERIFY_OUTPUT=$($CLI_CMD verify --key-id "$PQC_KEY_ID" --data "$PQC_SIGN_DATA" --signature "$PQC_SIGNATURE_B64")
-            if echo "$PQC_VERIFY_OUTPUT" | grep -q "Signature is valid"; then
-                log_info "✓ PQC signature verification successful"
-            else
-                log_error "PQC signature verification failed: $PQC_VERIFY_OUTPUT"
-                return 1
-            fi
-        else
-            log_error "Failed to sign with PQC key: $PQC_SIGN_OUTPUT"
-            return 1
-        fi
-    else
-        log_info "✓ PQC operations skipped (not supported in this build)"
-    fi
+    test_pqc_operations
 
     log_info "All CLI integration tests passed!"
     return 0

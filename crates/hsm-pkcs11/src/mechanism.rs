@@ -11,8 +11,10 @@ use cryptoki_sys::{
 };
 use hsm_core::{
     models::{KeyAlgorithm, KeyMaterialType},
-    pqc::{MlDsaSecurityLevel, MlKemSecurityLevel, SlhDsaSecurityLevel},
 };
+
+#[cfg(feature = "pqc")]
+use hsm_core::pqc::{MlDsaSecurityLevel, MlKemSecurityLevel, SlhDsaSecurityLevel};
 use std::collections::HashMap;
 use tracing::debug;
 
@@ -95,25 +97,15 @@ pub fn mechanism_to_key_algorithm(mechanism: CK_MECHANISM_TYPE) -> Option<KeyAlg
         CKM_RSA_PKCS_KEY_PAIR_GEN => Some(KeyAlgorithm::Rsa2048),
         CKM_EC_KEY_PAIR_GEN => Some(KeyAlgorithm::P256),
         CKM_AES_KEY_GEN => Some(KeyAlgorithm::Aes256Gcm),
-        
+
         // Post-quantum key generation mechanisms
-        CKM_ML_KEM_KEY_PAIR_GEN => Some(KeyAlgorithm::MlKem(MlKemSecurityLevel::MlKem768)),
-        CKM_ML_DSA_KEY_PAIR_GEN => Some(KeyAlgorithm::MlDsa(MlDsaSecurityLevel::MlDsa65)),
-        CKM_SLH_DSA_KEY_PAIR_GEN => Some(KeyAlgorithm::SlhDsa(SlhDsaSecurityLevel::SlhDsaSha2128f)),
-        
+        CKM_ML_KEM_KEY_PAIR_GEN => Some(KeyAlgorithm::MlKem768),
+        CKM_ML_DSA_KEY_PAIR_GEN => Some(KeyAlgorithm::MlDsa65),
+        CKM_SLH_DSA_KEY_PAIR_GEN => Some(KeyAlgorithm::SlhDsa128f),
+
         // Hybrid key generation mechanisms
-        CKM_HYBRID_ECDH_ML_KEM_KEY_PAIR_GEN => {
-            Some(KeyAlgorithm::HybridEcdhMlKem(
-                Box::new(KeyAlgorithm::P256),
-                MlKemSecurityLevel::MlKem768,
-            ))
-        }
-        CKM_HYBRID_ECDSA_ML_DSA_KEY_PAIR_GEN => {
-            Some(KeyAlgorithm::HybridEcdsaMlDsa(
-                Box::new(KeyAlgorithm::P256),
-                MlDsaSecurityLevel::MlDsa65,
-            ))
-        }
+        CKM_HYBRID_ECDH_ML_KEM_KEY_PAIR_GEN => Some(KeyAlgorithm::HybridP256MlKem768),
+        CKM_HYBRID_ECDSA_ML_DSA_KEY_PAIR_GEN => Some(KeyAlgorithm::HybridP256MlDsa65),
         _ => None,
     }
 }
@@ -121,15 +113,15 @@ pub fn mechanism_to_key_algorithm(mechanism: CK_MECHANISM_TYPE) -> Option<KeyAlg
 /// Maps a PKCS#11 mechanism type to a FerroHSM key material type
 pub fn mechanism_to_key_material_type(mechanism: CK_MECHANISM_TYPE) -> Option<KeyMaterialType> {
     match mechanism {
-        CKM_RSA_PKCS_KEY_PAIR_GEN => Some(KeyMaterialType::Rsa2048),
-        CKM_EC_KEY_PAIR_GEN => Some(KeyMaterialType::P256),
-        CKM_AES_KEY_GEN => Some(KeyMaterialType::Aes256Gcm),
-        
+        CKM_RSA_PKCS_KEY_PAIR_GEN => Some(KeyMaterialType::Rsa),
+        CKM_EC_KEY_PAIR_GEN => Some(KeyMaterialType::EcP256),
+        CKM_AES_KEY_GEN => Some(KeyMaterialType::Symmetric),
+
         // Post-quantum key material types
         CKM_ML_KEM_KEY_PAIR_GEN => Some(KeyMaterialType::MlKem768),
         CKM_ML_DSA_KEY_PAIR_GEN => Some(KeyMaterialType::MlDsa65),
-        CKM_SLH_DSA_KEY_PAIR_GEN => Some(KeyMaterialType::SlhDsaSha2128f),
-        
+        CKM_SLH_DSA_KEY_PAIR_GEN => Some(KeyMaterialType::SlhDsa128f),
+
         // Hybrid key material types
         CKM_HYBRID_ECDH_ML_KEM_KEY_PAIR_GEN => Some(KeyMaterialType::HybridP256MlKem768),
         CKM_HYBRID_ECDSA_ML_DSA_KEY_PAIR_GEN => Some(KeyMaterialType::HybridP256MlDsa65),
@@ -154,7 +146,6 @@ pub fn get_supported_mechanisms() -> Vec<CK_MECHANISM_TYPE> {
         CKM_AES_GCM,
         CKM_AES_CBC,
         CKM_AES_CBC_PAD,
-        
         // Post-quantum algorithms
         CKM_ML_KEM_KEY_PAIR_GEN,
         CKM_ML_KEM_512,
@@ -171,7 +162,6 @@ pub fn get_supported_mechanisms() -> Vec<CK_MECHANISM_TYPE> {
         CKM_SLH_DSA_SHA2_192S,
         CKM_SLH_DSA_SHA2_256F,
         CKM_SLH_DSA_SHA2_256S,
-        
         // Hybrid algorithms
         CKM_HYBRID_ECDH_ML_KEM_KEY_PAIR_GEN,
         CKM_HYBRID_ECDH_ML_KEM_512,
@@ -185,7 +175,10 @@ pub fn get_supported_mechanisms() -> Vec<CK_MECHANISM_TYPE> {
 }
 
 /// Maps a specific ML-KEM mechanism to its security level
-pub fn ml_kem_mechanism_to_security_level(mechanism: CK_MECHANISM_TYPE) -> Option<MlKemSecurityLevel> {
+#[cfg(feature = "pqc")]
+pub fn ml_kem_mechanism_to_security_level(
+    mechanism: CK_MECHANISM_TYPE,
+) -> Option<MlKemSecurityLevel> {
     match mechanism {
         CKM_ML_KEM_512 => Some(MlKemSecurityLevel::MlKem512),
         CKM_ML_KEM_768 => Some(MlKemSecurityLevel::MlKem768),
@@ -195,7 +188,10 @@ pub fn ml_kem_mechanism_to_security_level(mechanism: CK_MECHANISM_TYPE) -> Optio
 }
 
 /// Maps a specific ML-DSA mechanism to its security level
-pub fn ml_dsa_mechanism_to_security_level(mechanism: CK_MECHANISM_TYPE) -> Option<MlDsaSecurityLevel> {
+#[cfg(feature = "pqc")]
+pub fn ml_dsa_mechanism_to_security_level(
+    mechanism: CK_MECHANISM_TYPE,
+) -> Option<MlDsaSecurityLevel> {
     match mechanism {
         CKM_ML_DSA_44 => Some(MlDsaSecurityLevel::MlDsa44),
         CKM_ML_DSA_65 => Some(MlDsaSecurityLevel::MlDsa65),
@@ -205,19 +201,23 @@ pub fn ml_dsa_mechanism_to_security_level(mechanism: CK_MECHANISM_TYPE) -> Optio
 }
 
 /// Maps a specific SLH-DSA mechanism to its security level
-pub fn slh_dsa_mechanism_to_security_level(mechanism: CK_MECHANISM_TYPE) -> Option<SlhDsaSecurityLevel> {
+#[cfg(feature = "pqc")]
+pub fn slh_dsa_mechanism_to_security_level(
+    mechanism: CK_MECHANISM_TYPE,
+) -> Option<SlhDsaSecurityLevel> {
     match mechanism {
-        CKM_SLH_DSA_SHA2_128F => Some(SlhDsaSecurityLevel::SlhDsaSha2128f),
-        CKM_SLH_DSA_SHA2_128S => Some(SlhDsaSecurityLevel::SlhDsaSha2128s),
-        CKM_SLH_DSA_SHA2_192F => Some(SlhDsaSecurityLevel::SlhDsaSha2192f),
-        CKM_SLH_DSA_SHA2_192S => Some(SlhDsaSecurityLevel::SlhDsaSha2192s),
-        CKM_SLH_DSA_SHA2_256F => Some(SlhDsaSecurityLevel::SlhDsaSha2256f),
-        CKM_SLH_DSA_SHA2_256S => Some(SlhDsaSecurityLevel::SlhDsaSha2256s),
+        CKM_SLH_DSA_SHA2_128F => Some(SlhDsaSecurityLevel::SlhDsa128f),
+        CKM_SLH_DSA_SHA2_128S => Some(SlhDsaSecurityLevel::SlhDsa128s),
+        CKM_SLH_DSA_SHA2_192F => Some(SlhDsaSecurityLevel::SlhDsa192f),
+        CKM_SLH_DSA_SHA2_192S => Some(SlhDsaSecurityLevel::SlhDsa192s),
+        CKM_SLH_DSA_SHA2_256F => Some(SlhDsaSecurityLevel::SlhDsa256f),
+        CKM_SLH_DSA_SHA2_256S => Some(SlhDsaSecurityLevel::SlhDsa256s),
         _ => None,
     }
 }
 
 /// Maps a hybrid ECDH+ML-KEM mechanism to its components
+#[cfg(feature = "pqc")]
 pub fn hybrid_ecdh_ml_kem_mechanism_to_components(
     mechanism: CK_MECHANISM_TYPE,
 ) -> Option<(KeyAlgorithm, MlKemSecurityLevel)> {
@@ -230,6 +230,7 @@ pub fn hybrid_ecdh_ml_kem_mechanism_to_components(
 }
 
 /// Maps a hybrid ECDSA+ML-DSA mechanism to its components
+#[cfg(feature = "pqc")]
 pub fn hybrid_ecdsa_ml_dsa_mechanism_to_components(
     mechanism: CK_MECHANISM_TYPE,
 ) -> Option<(KeyAlgorithm, MlDsaSecurityLevel)> {

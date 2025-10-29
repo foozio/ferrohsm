@@ -1,0 +1,14 @@
+{
+  "permissions": {
+    "ask": [
+      "Read(!/Users/foozio/Downloads/Codes/ferrohsm/**)",
+      "Edit(!/Users/foozio/Downloads/Codes/ferrohsm/**)"
+    ],
+    "allow": [
+      "Read(/Users/foozio/Downloads/Codes/ferrohsm/**)",
+      "Edit(/Users/foozio/Downloads/Codes/ferrohsm/**)"
+    ]
+  },
+  "memoryImport": {},
+  "monitoring": {}
+}

@@ -27,6 +27,10 @@ pub enum HsmError {
     ApprovalRequired { approval_id: Uuid },
     #[error("invalid request: {0}")]
     InvalidRequest(String),
+    #[error("unsupported algorithm: {0}")]
+    UnsupportedAlgorithm(String),
+    #[error("missing private key")]
+    MissingPrivateKey,
     #[error("unexpected error: {0}")]
     Unexpected(String),
 }
@@ -43,5 +47,8 @@ impl HsmError {
     }
     pub fn invalid<E: std::fmt::Display>(err: E) -> Self {
         Self::InvalidRequest(err.to_string())
+    }
+    pub fn unsupported_algorithm<E: std::fmt::Display>(err: E) -> Self {
+        Self::UnsupportedAlgorithm(err.to_string())
     }
 }
