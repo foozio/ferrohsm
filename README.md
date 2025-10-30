@@ -2,6 +2,13 @@
 
 FerroHSM is a software-based Hardware Security Module implemented in Rust with Secure by Design principles. It offers cryptographic key management, tamper-evident storage, role-based access control, and both REST + CLI interfaces for integration with modern platforms.
 
+## Crate Overview
+
+- `hsm-core`: memory-safe cryptographic core featuring AES-256-GCM, RSA-2048/4096, P-256/P-384, post-quantum cryptography (ML-KEM, ML-DSA, SLH-DSA), hybrid cryptography, policy enforcement, and audit logging.
+- `hsm-server`: Axum-based HTTPS service delivering REST APIs and a management UI surfacing approvals, audit trails, and live metrics with JWT authentication and optional mutual TLS support.
+- `hsm-cli`: administrative client for day-to-day operations built on top of the REST API with built-in JWT issuance.
+- `hsm-tui`: text-based user interface for interactive HSM management directly from the terminal.
+
 ## Installation
 
 ### Homebrew (macOS)
