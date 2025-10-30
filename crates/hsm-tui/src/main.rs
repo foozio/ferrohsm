@@ -7,7 +7,7 @@ use crossterm::{
 };
 use ratatui::{
     prelude::*,
-    widgets::{block::Title, Block, Borders, List, ListItem, ListState, Paragraph},
+    widgets::{Block, Borders, List, ListItem, ListState, Paragraph},
 };
 use std::{io, panic};
 
@@ -36,7 +36,6 @@ struct Cli {
 enum AppMode {
     MainMenu,
     KeysList,
-    KeyDetails,
     KeyCreate,
     KeyOperations,
     ApprovalsList,
@@ -50,18 +49,14 @@ struct AppState {
     mode: AppMode,
     quit: bool,
     main_menu_state: ListState,
-    endpoint: String,
-    connection_status: String,
 }
 
 impl AppState {
-    fn new(endpoint: String) -> AppState {
+    fn new() -> AppState {
         let mut state = AppState {
             mode: AppMode::MainMenu,
             quit: false,
             main_menu_state: ListState::default(),
-            endpoint,
-            connection_status: "Disconnected".to_string(),
         };
         state.main_menu_state.select(Some(0));
         state
@@ -106,9 +101,9 @@ struct App {
 }
 
 impl App {
-    fn new(cli: Cli) -> App {
+    fn new(_cli: Cli) -> App {
         App {
-            state: AppState::new(cli.endpoint),
+            state: AppState::new(),
         }
     }
 
@@ -197,9 +192,6 @@ impl App {
                 AppMode::KeysList => {
                     self.draw_keys_list(f, chunks[1]);
                 }
-                AppMode::KeyDetails => {
-                    self.draw_key_details(f, chunks[1]);
-                }
                 AppMode::KeyCreate => {
                     self.draw_key_create(f, chunks[1]);
                 }
@@ -229,7 +221,7 @@ impl App {
                 .style(Style::default().fg(Color::White).bg(Color::DarkGray))
                 .alignment(Alignment::Center);
             f.render_widget(footer, chunks[2]);
-        })?;
+        }).map_err(|e| anyhow::anyhow!("Failed to draw terminal: {:?}", e))?;
         Ok(())
     }
 
@@ -249,7 +241,7 @@ impl App {
             .block(
                 Block::default()
                     .borders(Borders::ALL)
-                    .title(Title::from("Main Menu".to_string())),
+                    .title("Main Menu"),
             )
             .highlight_style(Style::default().bg(Color::Blue).fg(Color::White))
             .highlight_symbol(">> ");
@@ -260,12 +252,6 @@ impl App {
     fn draw_keys_list(&self, f: &mut Frame, area: Rect) {
         let content = Paragraph::new("Keys List View\n\nList and manage cryptographic keys.")
             .block(Block::default().borders(Borders::ALL).title("Keys Management"));
-        f.render_widget(content, area);
-    }
-
-    fn draw_key_details(&self, f: &mut Frame, area: Rect) {
-        let content = Paragraph::new("Key Details View\n\nView detailed information about a specific key.")
-            .block(Block::default().borders(Borders::ALL).title("Key Details"));
         f.render_widget(content, area);
     }
 

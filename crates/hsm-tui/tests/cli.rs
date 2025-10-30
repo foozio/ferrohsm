@@ -1,11 +1,12 @@
 #[cfg(test)]
 mod tests {
-    use assert_cmd::Command;
+    use assert_cmd::assert::OutputAssertExt;
     use predicates::prelude::*;
+    use escargot::CargoBuild;
 
     #[test]
     fn test_help_output() {
-        let mut cmd = Command::cargo_bin("hsm-tui").unwrap();
+        let mut cmd = CargoBuild::new().bin("hsm-tui").run().unwrap().command();
         cmd.arg("--help");
         cmd.assert()
             .success()
@@ -15,7 +16,7 @@ mod tests {
 
     #[test]
     fn test_version_output() {
-        let mut cmd = Command::cargo_bin("hsm-tui").unwrap();
+        let mut cmd = CargoBuild::new().bin("hsm-tui").run().unwrap().command();
         cmd.arg("--version");
         cmd.assert()
             .success()
@@ -26,19 +27,20 @@ mod tests {
     fn test_binary_exists() {
         // Test that the binary can be executed and returns a proper error code
         // when run without a terminal (which is expected)
-        let mut cmd = Command::cargo_bin("hsm-tui").unwrap();
+        let mut cmd = CargoBuild::new().bin("hsm-tui").run().unwrap().command();
         cmd.assert()
             .failure(); // Expected to fail without a terminal
     }
     
     #[test]
     fn test_endpoint_argument() {
-        let mut cmd = Command::cargo_bin("hsm-tui").unwrap();
+        let mut cmd = CargoBuild::new().bin("hsm-tui").run().unwrap().command();
         cmd.arg("--endpoint")
             .arg("https://test.example.com")
             .arg("--help"); // Add help to prevent the app from trying to run
         cmd.assert()
             .success()
-            .stdout(predicate::str::contains("https://test.example.com"));
+            .stdout(predicate::str::contains("--endpoint <ENDPOINT>"))
+            .stdout(predicate::str::contains("[default: https://localhost:8443]"));
     }
 }
