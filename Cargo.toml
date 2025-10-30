@@ -4,6 +4,7 @@ members = [
     "crates/hsm-server",
     "crates/hsm-cli",
     "crates/hsm-pkcs11",
+    "crates/hsm-tui",
 ]
 resolver = "2"
 
