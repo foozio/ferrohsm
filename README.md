@@ -27,13 +27,19 @@ Enhanced policy controls ensure proper governance of post-quantum operations, wi
 
 ## Installation
 
-### Homebrew (macOS)
+### Homebrew (macOS & Linux)
 
-The easiest way to install FerroHSM on macOS is via Homebrew:
+The easiest way to install FerroHSM on macOS or Linux is via Homebrew:
 
+**macOS:**
 ```bash
 brew tap foozio/ferrohsm
 brew install ferrohsm
+```
+
+**Linux:**
+```bash
+brew install ./dist/homebrew-linux/ferrohsm.rb
 ```
 
 See [Homebrew Installation](docs/homebrew/installation.md) for detailed instructions.

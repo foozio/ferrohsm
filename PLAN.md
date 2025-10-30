@@ -11,7 +11,7 @@
 - Achieve interoperability with at least SoftHSM (open-source reference) and one commercial HSM vendor before GA.
 - Maintain security posture: constant-time critical paths, strict memory hygiene, audited logging, and no sensitive data leakage.
 - Provide multiple user interface options (CLI, TUI, REST, PKCS#11) for different use cases.
-- Enable easy distribution and installation via package managers (Homebrew).
+- Enable easy distribution and installation via package managers (Homebrew for macOS and Linux).
 
 ## Non-Goals
 - FIPS 140-3 certification work (tracked separately under Compliance).
@@ -31,6 +31,7 @@
 - Hardware vendors expose either PKCS#11 or REST/gRPC APIs that we can wrap behind a trait-based adapter.
 - Budget secured for at least one commercial HSM (e.g., Luna, SafeNet) and cloud HSM sandbox accounts.
 - Users will benefit from multiple interface options (CLI, TUI, REST, PKCS#11).
+- Cross-platform support (macOS and Linux) via Homebrew package manager.
 
 ## Phase Breakdown
 
@@ -55,7 +56,7 @@
 - Prototype PCIe/USB HSM integration (e.g., YubiHSM 2) to validate device communication layers.
 - Add secure key material caching rules (no long-lived plaintext in memory, zeroization on drop).
 - Provide configuration surfaces (`hsm-server` config, CLI) for selecting hardware backends and slots.
-- Enhance distribution mechanisms (Homebrew, container images).
+- Enhance distribution mechanisms (Homebrew for macOS and Linux, container images).
 
 ### Phase 3 — Hardening & Interop (4–5 weeks)
 - Run interoperability testing against vendor test suites (SafeNet Luna, Thales, Utimaco as available).
@@ -70,7 +71,7 @@
 - Produce certification packet: conformance results, interoperability matrix, performance benchmarks.
 - Deliver enablement materials (release notes, webinars, partner outreach).
 - Feature-flagged GA in `v1.0`, with rollout checklist and post-launch monitoring plan.
-- Ensure Homebrew distribution is stable and well-documented.
+- Ensure Homebrew distribution is stable and well-documented for both macOS and Linux.
 
 ## Workstreams
 
@@ -92,7 +93,7 @@
 
 ### 3. User Experience Enhancement
 - **TUI Interface:** Provide interactive terminal experience with keyboard navigation.
-- **Distribution:** Enable easy installation via package managers (Homebrew).
+- **Distribution:** Enable easy installation via package managers (Homebrew for macOS and Linux).
 - **Documentation:** Create comprehensive guides for all interface options.
 - **Examples:** Provide sample applications demonstrating each interface.
 
@@ -103,7 +104,7 @@
 - Interoperability report summarizing vendor compatibility results.
 - Operations runbook covering deployment, monitoring, backup/restore, and incident response.
 - TUI interface for enhanced user experience.
-- Homebrew distribution for macOS users.
+- Homebrew distribution for macOS and Linux users.
 
 ## Validation Strategy
 - Unit tests for argument parsing, session lifecycle, and mechanism mapping.
@@ -127,6 +128,7 @@
 - **Resource Contention:** Limited hardware units; schedule shared lab time and provide SoftHSM fallback for developers.
 - **Timeline Creep:** Vendor onboarding delays; maintain optional milestone to ship with SoftHSM first while parallelizing vendor work.
 - **User Adoption:** Multiple interfaces may confuse users; provide clear documentation and migration guides.
+- **Cross-Platform Support:** Different platforms may have different requirements; test on both macOS and Linux.
 
 ## Success Metrics
 - 95% pass rate on PKCS#11 conformance suite and zero critical defects in launch review.
@@ -149,4 +151,4 @@
 - Procure required hardware and schedule lab time aligned with Phase 2.
 - Begin implementation of PKCS#11 compatibility layer.
 - Enhance TUI interface with additional features.
-- Prepare Homebrew distribution for wider release.
+- Prepare Homebrew distribution for wider release on both macOS and Linux.

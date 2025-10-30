@@ -13,7 +13,7 @@ FerroHSM currently includes:
 - Post-Quantum Cryptography (PQC) support (ML-KEM, ML-DSA, SLH-DSA)
 - PKCS#11 compatibility layer (in progress)
 - TUI interface (newly added)
-- Homebrew distribution support (newly added)
+- Homebrew distribution support for macOS and Linux (newly added)
 
 ## Phased Development Plan
 
@@ -73,13 +73,13 @@ FerroHSM currently includes:
 
 #### Tasks:
 - [x] Create TUI (Text-based User Interface) for interactive HSM management
-- [x] Implement Homebrew distribution for macOS users
+- [x] Implement Homebrew distribution for macOS and Linux users
 - [ ] Add web-based management UI enhancements
 - [ ] Create comprehensive documentation for all interfaces
 
 #### Features Added:
 - **TUI Interface**: Interactive terminal application with keyboard navigation
-- **Homebrew Distribution**: One-command installation for macOS users
+- **Homebrew Distribution**: One-command installation for macOS and Linux users
 - **Enhanced CLI**: Improved command-line interface with better help and error messages
 
 #### Dependencies:
@@ -184,7 +184,7 @@ FerroHSM currently includes:
 | Post-Quantum Cryptography | ✅ Complete | Phase 0 |
 | PKCS#11 Compatibility | 🔄 In Progress | Phase 1 |
 | TUI Interface | ✅ Complete | Phase 2 |
-| Homebrew Distribution | ✅ Complete | Phase 2 |
+| Homebrew Distribution (macOS/Linux) | ✅ Complete | Phase 2 |
 | Hardware Integration | ⏳ Planned | Phase 3 |
 | Advanced Security Features | ⏳ Planned | Phase 4 |
 | Performance Optimization | ⏳ Planned | Phase 5 |
