@@ -9,6 +9,7 @@ pub mod crypto;
 pub mod error;
 pub mod fs_utils;
 pub mod models;
+pub mod pkcs11;
 pub mod policy;
 #[cfg(feature = "pqc")]
 pub mod pqc;
