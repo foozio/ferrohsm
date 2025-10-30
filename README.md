@@ -2,6 +2,25 @@
 
 FerroHSM is a software-based Hardware Security Module implemented in Rust with Secure by Design principles. It offers cryptographic key management, tamper-evident storage, role-based access control, and both REST + CLI interfaces for integration with modern platforms.
 
+## Installation
+
+### Homebrew (macOS)
+
+The easiest way to install FerroHSM on macOS is via Homebrew:
+
+```bash
+brew tap foozio/ferrohsm
+brew install ferrohsm
+```
+
+See [Homebrew Installation](docs/homebrew/installation.md) for detailed instructions.
+
+### Manual Installation
+
+1. Install Rust (1.75+ recommended).
+2. Clone this repository and build with `cargo build --release`
+3. The binaries will be available in `target/release/`
+
 ## Crate Overview
 
 - `hsm-core`: memory-safe cryptographic core featuring AES-256-GCM, RSA-2048/4096, P-256/P-384, post-quantum cryptography (ML-KEM, ML-DSA, SLH-DSA), hybrid cryptography, policy enforcement, and audit logging.
