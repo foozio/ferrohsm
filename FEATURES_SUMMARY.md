@@ -34,6 +34,7 @@ This document summarizes all the features implemented in FerroHSM and provides a
 
 ### Distribution & Installation
 - ✅ Homebrew distribution for macOS
+- ✅ Homebrew distribution for Linux
 - ✅ Standard Cargo build process
 - ⏳ Container images (planned)
 - ⏳ Other package managers (planned)
@@ -64,7 +65,7 @@ The PKCS#11 compatibility layer is being implemented with:
 **Status:** ✅ Completed (TUI), 🔄 In Progress (PKCS#11)
 
 - ✅ TUI interface with keyboard navigation
-- ✅ Homebrew distribution for macOS
+- ✅ Homebrew distribution for macOS and Linux
 - 🔄 Continued PKCS#11 development
 
 ### Phase 3: Hardware Integration & Security Enhancements
