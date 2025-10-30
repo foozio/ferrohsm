@@ -1,0 +1,30 @@
+[package]
+name = "hsm-pkcs11"
+version = "0.1.0"
+edition = "2021"
+authors = ["FerroHSM Contributors"]
+description = "PKCS#11 interface for FerroHSM"
+repository = "https://github.com/ferrohsm/hsm-pkcs11"
+license = "MIT OR Apache-2.0"
+keywords = ["pkcs11", "hsm", "cryptography"]
+categories = ["cryptography"]
+
+[dependencies]
+hsm-core = { path = "../crates/hsm-core" }
+cryptoki = "0.4"
+thiserror = "1.0"
+tokio = { version = "1.0", features = ["full"] }
+serde = { version = "1.0", features = ["derive"] }
+serde_json = "1.0"
+tracing = "0.1"
+lazy_static = "1.4"
+uuid = { version = "1.0", features = ["v4"] }
+
+[dev-dependencies]
+tempfile = "3.0"
+
+[lib]
+crate-type = ["cdylib", "rlib"]
+
+[features]
+soft-hsm = []
