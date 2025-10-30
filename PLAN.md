@@ -10,6 +10,8 @@
 - Enable hardware-backed key storage and cryptographic operations via modular hardware/KMS adapters.
 - Achieve interoperability with at least SoftHSM (open-source reference) and one commercial HSM vendor before GA.
 - Maintain security posture: constant-time critical paths, strict memory hygiene, audited logging, and no sensitive data leakage.
+- Provide multiple user interface options (CLI, TUI, REST, PKCS#11) for different use cases.
+- Enable easy distribution and installation via package managers (Homebrew).
 
 ## Non-Goals
 - FIPS 140-3 certification work (tracked separately under Compliance).
@@ -28,6 +30,7 @@
 - We can rely on the Rust `cryptoki` crate for PKCS#11 constants/types, complemented by custom glue.
 - Hardware vendors expose either PKCS#11 or REST/gRPC APIs that we can wrap behind a trait-based adapter.
 - Budget secured for at least one commercial HSM (e.g., Luna, SafeNet) and cloud HSM sandbox accounts.
+- Users will benefit from multiple interface options (CLI, TUI, REST, PKCS#11).
 
 ## Phase Breakdown
 
@@ -44,6 +47,7 @@
 - Extend `hsm-core` with metadata required for PKCS#11 attributes (object classes, mechanisms, key policies).
 - Develop mock hardware adapter that proxies to existing software keystore for early testing.
 - Establish conformance test harness using OASIS PKCS#11 test suite and SoftHSM.
+- Integrate TUI interface for enhanced user experience.
 
 ### Phase 2 — Hardware Integration (6–8 weeks)
 - Implement adapter for SoftHSM/Software fallback; ensure parity with existing storage.
@@ -51,6 +55,7 @@
 - Prototype PCIe/USB HSM integration (e.g., YubiHSM 2) to validate device communication layers.
 - Add secure key material caching rules (no long-lived plaintext in memory, zeroization on drop).
 - Provide configuration surfaces (`hsm-server` config, CLI) for selecting hardware backends and slots.
+- Enhance distribution mechanisms (Homebrew, container images).
 
 ### Phase 3 — Hardening & Interop (4–5 weeks)
 - Run interoperability testing against vendor test suites (SafeNet Luna, Thales, Utimaco as available).
@@ -58,12 +63,14 @@
 - Implement auditing hooks for PKCS#11 operations and map to existing telemetry.
 - Perform load/stress tests with concurrent sessions and long-lived operations.
 - Address compliance feedback; update threat model and security review.
+- Finalize TUI interface with full feature set.
 
 ### Phase 4 — Launch Readiness (2 weeks)
 - Finalize documentation: admin guides, migration paths, SDK updates, sample code.
 - Produce certification packet: conformance results, interoperability matrix, performance benchmarks.
 - Deliver enablement materials (release notes, webinars, partner outreach).
 - Feature-flagged GA in `v1.0`, with rollout checklist and post-launch monitoring plan.
+- Ensure Homebrew distribution is stable and well-documented.
 
 ## Workstreams
 
@@ -83,12 +90,20 @@
 - **Configuration & Policy:** Extend configuration files/CLI to bind tokens to hardware slots and enforce usage policies.
 - **Monitoring:** Add health checks (device reachability, key checksum verification) and alerting hooks.
 
+### 3. User Experience Enhancement
+- **TUI Interface:** Provide interactive terminal experience with keyboard navigation.
+- **Distribution:** Enable easy installation via package managers (Homebrew).
+- **Documentation:** Create comprehensive guides for all interface options.
+- **Examples:** Provide sample applications demonstrating each interface.
+
 ## Deliverables
 - `hsm-pkcs11` crate with documented API surface and published crate docs.
 - Updated `hsm-core`/`hsm-server` modules with PKCS#11-aware capabilities and hardware adapter hooks.
 - Automated conformance suite integrated into CI pipelines.
 - Interoperability report summarizing vendor compatibility results.
 - Operations runbook covering deployment, monitoring, backup/restore, and incident response.
+- TUI interface for enhanced user experience.
+- Homebrew distribution for macOS users.
 
 ## Validation Strategy
 - Unit tests for argument parsing, session lifecycle, and mechanism mapping.
@@ -96,12 +111,14 @@
 - End-to-end regression suite wrapping existing FerroHSM flows through PKCS#11 clients.
 - Fuzzing harness for request parsing to catch malformed templates and concurrency edge cases.
 - Security review including memory sanitizers (ASan), Valgrind, and secret scanning on crash dumps.
+- User experience testing for TUI interface.
 
 ## Dependencies
 - Availability of vendor SDKs/drivers (license agreements, NDAs).
 - Infrastructure for hardware labs and secure secrets management in CI.
 - Upstream crates (`cryptoki`, `tokio`) compatibility with targeted Rust version.
 - Coordination with compliance team for audit logging requirements.
+- Package manager integration tools (Homebrew formula creation).
 
 ## Risks & Mitigations
 - **Spec Ambiguity:** PKCS#11 implementations vary; mitigate with extensive compatibility testing and configurable quirks.
@@ -109,20 +126,27 @@
 - **Security Regression:** Bridging C ABI increases attack surface; enforce strict fuzzing and defensive coding (bounds checks, zeroization).
 - **Resource Contention:** Limited hardware units; schedule shared lab time and provide SoftHSM fallback for developers.
 - **Timeline Creep:** Vendor onboarding delays; maintain optional milestone to ship with SoftHSM first while parallelizing vendor work.
+- **User Adoption:** Multiple interfaces may confuse users; provide clear documentation and migration guides.
 
 ## Success Metrics
 - 95% pass rate on PKCS#11 conformance suite and zero critical defects in launch review.
 - ≤5% performance regression on existing `hsm-core` operations when PKCS#11 layer enabled.
 - At least two reference customers completing pilot using PKCS#11 interface.
 - MTTR < 1 hour for hardware adapter failures detected via monitoring alerts.
+- <5 minutes for Homebrew installation, <10 minutes for first operation.
+- 90% user satisfaction rating for TUI interface in beta testing.
 
 ## Open Questions
 - Which vendor HSM has priority for initial certification (SafeNet vs Thales)?
 - Do we need multi-tenant isolation per PKCS#11 slot for managed service offerings?
 - Should we expose PKCS#11 via shared library download or containerized sidecar by default?
 - How will licensing and NDAs impact automated test distribution?
+- What additional package managers should we support beyond Homebrew?
 
 ## Next Steps
 - Secure stakeholder sign-off on scope and timeline.
 - Spin up ADR drafting session and assign owners for Phase 0 tasks.
 - Procure required hardware and schedule lab time aligned with Phase 2.
+- Begin implementation of PKCS#11 compatibility layer.
+- Enhance TUI interface with additional features.
+- Prepare Homebrew distribution for wider release.
