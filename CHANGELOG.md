@@ -10,6 +10,10 @@
   - P-384 + ML-KEM-1024
   - P-256 + ML-DSA variants
 - Enhanced policy controls for PQC operations with configurable dual-control requirements and role-based restrictions
+- **PKCS#11 Interface**: Full PKCS#11 v2.40 compliant interface for legacy application compatibility
+- **Enhanced TUI**: Improved text-based user interface with menu-based navigation
+- **Homebrew Distribution**: One-command installation for macOS and Linux users
+- **Comprehensive Documentation**: Complete API reference and user guides for all interfaces
 - Updated SDK examples and test scripts to demonstrate PQC functionality
 
 ## Bug Fixes

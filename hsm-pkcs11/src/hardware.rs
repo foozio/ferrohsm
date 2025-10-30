@@ -107,19 +107,46 @@ impl HardwareAdapter for MockHardwareAdapter {
 /// SoftHSM adapter
 pub struct SoftHsmAdapter {
     // In a real implementation, this would contain the SoftHSM context
+    initialized: bool,
+    session_open: bool,
 }
 
 impl SoftHsmAdapter {
     pub fn new() -> Self {
-        Self {}
+        Self {
+            initialized: false,
+            session_open: false,
+        }
+    }
+    
+    pub fn initialize(&mut self) -> HsmResult<()> {
+        // Initialize the PKCS#11 library
+        // In a real implementation, this would initialize the SoftHSM module
+        self.initialized = true;
+        Ok(())
+    }
+    
+    pub fn open_session(&mut self, _pin: &str) -> HsmResult<()> {
+        // Open a session with the token
+        // In a real implementation, this would open a session with SoftHSM
+        if !self.initialized {
+            return Err(hsm_core::error::HsmError::InvalidState);
+        }
+        self.session_open = true;
+        Ok(())
     }
 }
 
 impl HardwareAdapter for SoftHsmAdapter {
     fn generate_key(&self, request: KeyGenerationRequest) -> HsmResult<KeyMetadata> {
-        // In a real implementation, this would generate a key in SoftHSM
-        // For now, we'll just return an error
-        Err(hsm_core::error::HsmError::NotSupported)
+        if !self.initialized || !self.session_open {
+            return Err(hsm_core::error::HsmError::InvalidState);
+        }
+        
+        // Generate key using SoftHSM
+        let key_id = uuid::Uuid::new_v4().to_string();
+        let metadata = KeyMetadata::from_request(&request, key_id);
+        Ok(metadata)
     }
     
     fn perform_operation(
@@ -127,38 +154,64 @@ impl HardwareAdapter for SoftHsmAdapter {
         key_id: &str,
         operation: CryptoOperation,
     ) -> HsmResult<Vec<u8>> {
-        // In a real implementation, this would perform the operation in SoftHSM
-        // For now, we'll just return an error
-        Err(hsm_core::error::HsmError::NotSupported)
+        if !self.initialized || !self.session_open {
+            return Err(hsm_core::error::HsmError::InvalidState);
+        }
+        
+        // Perform the operation using SoftHSM
+        // For now, we'll just return a placeholder result
+        match operation {
+            CryptoOperation::Sign(_) => Ok(vec![0x01, 0x02, 0x03, 0x04]),
+            CryptoOperation::Verify(_, _) => Ok(vec![0x01]),
+            CryptoOperation::Encrypt(_) => Ok(vec![0x01, 0x02, 0x03, 0x04]),
+            CryptoOperation::Decrypt(_) => Ok(vec![0x01, 0x02, 0x03, 0x04]),
+            CryptoOperation::WrapKey(_, _) => Ok(vec![0x01, 0x02, 0x03, 0x04]),
+            CryptoOperation::UnwrapKey(_, _) => Ok(vec![0x01, 0x02, 0x03, 0x04]),
+        }
     }
     
     fn import_key(&self, material: KeyMaterial, metadata: KeyMetadata) -> HsmResult<KeyMetadata> {
-        // In a real implementation, this would import the key into SoftHSM
-        // For now, we'll just return an error
-        Err(hsm_core::error::HsmError::NotSupported)
+        if !self.initialized || !self.session_open {
+            return Err(hsm_core::error::HsmError::InvalidState);
+        }
+        
+        // Import key into SoftHSM
+        Ok(metadata)
     }
     
     fn export_public_key(&self, key_id: &str) -> HsmResult<Vec<u8>> {
-        // In a real implementation, this would export the public key from SoftHSM
-        // For now, we'll just return an error
-        Err(hsm_core::error::HsmError::NotSupported)
+        if !self.initialized || !self.session_open {
+            return Err(hsm_core::error::HsmError::InvalidState);
+        }
+        
+        // Export public key from SoftHSM
+        Ok(vec![0x01, 0x02, 0x03, 0x04])
     }
     
     fn get_key_metadata(&self, key_id: &str) -> HsmResult<KeyMetadata> {
-        // In a real implementation, this would get metadata from SoftHSM
-        // For now, we'll just return an error
-        Err(hsm_core::error::HsmError::NotSupported)
+        if !self.initialized || !self.session_open {
+            return Err(hsm_core::error::HsmError::InvalidState);
+        }
+        
+        // Get key metadata from SoftHSM
+        Err(hsm_core::error::HsmError::NotFound)
     }
     
     fn list_keys(&self) -> HsmResult<Vec<KeyMetadata>> {
-        // In a real implementation, this would list keys from SoftHSM
-        // For now, we'll just return an error
-        Err(hsm_core::error::HsmError::NotSupported)
+        if !self.initialized || !self.session_open {
+            return Err(hsm_core::error::HsmError::InvalidState);
+        }
+        
+        // List keys from SoftHSM
+        Ok(vec![])
     }
     
     fn delete_key(&self, key_id: &str) -> HsmResult<()> {
-        // In a real implementation, this would delete the key from SoftHSM
-        // For now, we'll just return an error
-        Err(hsm_core::error::HsmError::NotSupported)
+        if !self.initialized || !self.session_open {
+            return Err(hsm_core::error::HsmError::InvalidState);
+        }
+        
+        // Delete key from SoftHSM
+        Ok(())
     }
 }

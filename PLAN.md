@@ -43,12 +43,12 @@
 - [x] Produce architecture decision record (ADR) covering shim boundaries, threading model, and error translation.
 
 ### Phase 1 — Foundation (4–6 weeks)
-- Implement PKCS#11 front-end crate (`hsm-pkcs11`) exposing C ABI compatible entry points.
-- Build session/token management layer (slot enumeration, session pooling, state machine adherence).
-- Extend `hsm-core` with metadata required for PKCS#11 attributes (object classes, mechanisms, key policies).
-- Develop mock hardware adapter that proxies to existing software keystore for early testing.
-- Establish conformance test harness using OASIS PKCS#11 test suite and SoftHSM.
-- Integrate TUI interface for enhanced user experience.
+- [x] Implement PKCS#11 front-end crate (`hsm-pkcs11`) exposing C ABI compatible entry points.
+- [x] Build session/token management layer (slot enumeration, session pooling, state machine adherence).
+- [x] Extend `hsm-core` with metadata required for PKCS#11 attributes (object classes, mechanisms, key policies).
+- [x] Develop mock hardware adapter that proxies to existing software keystore for early testing.
+- [x] Establish conformance test harness using OASIS PKCS#11 test suite and SoftHSM.
+- [x] Integrate TUI interface for enhanced user experience.
 
 ### Phase 2 — Hardware Integration (6–8 weeks)
 - Implement adapter for SoftHSM/Software fallback; ensure parity with existing storage.

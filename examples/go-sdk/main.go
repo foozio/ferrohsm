@@ -1,4 +1,25 @@
-package main
+/*
+FerroHSM Go SDK Example
+
+This example demonstrates how to use the FerroHSM REST API from Go.
+It also shows how to integrate with the PKCS#11 interface for legacy applications.
+
+Features demonstrated:
+- Key creation with dual-control approval
+- Cryptographic signing operations
+- Approval workflow management
+- Metrics collection
+- PKCS#11 integration (when available)
+
+To use PKCS#11 with Go, you can use the github.com/miekg/pkcs11 package:
+    go get github.com/miekg/pkcs11
+
+Example PKCS#11 usage:
+    ctx := pkcs11.New("/path/to/libhsm_pkcs11.so")
+    defer ctx.Destroy()
+    ctx.Initialize()
+    // ... use PKCS#11 functions
+*/
 
 import (
     "bytes"

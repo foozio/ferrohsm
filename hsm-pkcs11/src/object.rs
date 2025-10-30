@@ -126,12 +126,27 @@ impl Object {
     pub fn get_attribute_value(&self, attr_type: CK_ATTRIBUTE_TYPE) -> Option<&Vec<u8>> {
         self.attributes.get(&attr_type)
     }
+    
+    /// Set attribute value
+    pub fn set_attribute_value(&mut self, attr_type: CK_ATTRIBUTE_TYPE, value: Vec<u8>) {
+        self.attributes.insert(attr_type, value);
+    }
+    
+    /// Get multiple attribute values
+    pub fn get_attribute_values(&self, attr_types: &[CK_ATTRIBUTE_TYPE]) -> HashMap<CK_ATTRIBUTE_TYPE, Option<&Vec<u8>>> {
+        let mut result = HashMap::new();
+        for &attr_type in attr_types {
+            result.insert(attr_type, self.attributes.get(&attr_type));
+        }
+        result
+    }
 }
 
 /// Manages PKCS#11 objects
 pub struct ObjectManager {
     objects: HashMap<CK_OBJECT_HANDLE, Object>,
     next_handle: CK_OBJECT_HANDLE,
+    search_cursors: HashMap<CK_SESSION_HANDLE, Vec<CK_OBJECT_HANDLE>>,
 }
 
 impl ObjectManager {
@@ -139,6 +154,7 @@ impl ObjectManager {
         Self {
             objects: HashMap::new(),
             next_handle: 1,
+            search_cursors: HashMap::new(),
         }
     }
     
@@ -176,6 +192,49 @@ impl ObjectManager {
         matches
     }
     
+    /// Find objects with a limit
+    pub fn find_objects_limited(&self, template: &[CK_ATTRIBUTE], max_count: usize) -> Vec<CK_OBJECT_HANDLE> {
+        let mut matches = Vec::new();
+        
+        for (handle, object) in &self.objects {
+            if self.object_matches_template(object, template) {
+                matches.push(*handle);
+                if matches.len() >= max_count {
+                    break;
+                }
+            }
+        }
+        
+        matches
+    }
+    
+    /// Initialize a search operation
+    pub fn find_objects_init(&mut self, session_handle: CK_SESSION_HANDLE, template: &[CK_ATTRIBUTE]) -> CK_RV {
+        let matches = self.find_objects(template);
+        self.search_cursors.insert(session_handle, matches);
+        CK_RV::CKR_OK
+    }
+    
+    /// Continue a search operation
+    pub fn find_objects_continue(&mut self, session_handle: CK_SESSION_HANDLE, max_count: usize) -> (Vec<CK_OBJECT_HANDLE>, CK_RV) {
+        if let Some(cursor) = self.search_cursors.get_mut(&session_handle) {
+            let count = std::cmp::min(cursor.len(), max_count);
+            let result = cursor.drain(0..count).collect();
+            (result, CK_RV::CKR_OK)
+        } else {
+            (Vec::new(), CK_RV::CKR_OPERATION_NOT_INITIALIZED)
+        }
+    }
+    
+    /// Finalize a search operation
+    pub fn find_objects_final(&mut self, session_handle: CK_SESSION_HANDLE) -> CK_RV {
+        if self.search_cursors.remove(&session_handle).is_some() {
+            CK_RV::CKR_OK
+        } else {
+            CK_RV::CKR_OPERATION_NOT_INITIALIZED
+        }
+    }
+    
     /// Check if an object matches a template
     fn object_matches_template(&self, object: &Object, template: &[CK_ATTRIBUTE]) -> bool {
         for attr in template {
@@ -191,5 +250,10 @@ impl ObjectManager {
         }
         
         true
+    }
+    
+    /// Remove an object by handle
+    pub fn remove_object(&mut self, handle: CK_OBJECT_HANDLE) -> Option<Object> {
+        self.objects.remove(&handle)
     }
 }

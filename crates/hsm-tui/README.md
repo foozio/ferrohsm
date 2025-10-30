@@ -4,11 +4,13 @@ A Text-based User Interface for FerroHSM, providing an interactive terminal expe
 
 ## Features
 
-- Interactive dashboard for monitoring HSM status
-- Key management interface
-- Audit log viewing
+- Interactive dashboard with menu-based navigation
+- Key management interface with full CRUD operations
+- Cryptographic operations (sign, encrypt, decrypt)
+- Audit log viewing and verification
 - Approval workflow management
-- Keyboard navigation
+- Settings configuration
+- Comprehensive help system
 
 ## Installation
 
@@ -23,18 +25,31 @@ cargo run -p hsm-tui
 
 After starting the application, you can navigate using these keys:
 
-- `d` - Dashboard view
-- `k` - Keys management view
-- `a` - Audit logs view
-- `p` - Approvals view
+### Main Menu Navigation
+- `↑`/`↓` - Navigate between menu items
+- `Enter` - Select the current menu item
 - `q` or `Esc` - Quit the application
+
+### Within Views
+- `q` or `Esc` - Return to the main menu
+
+## Available Views
+
+1. **Key Management** - List and manage cryptographic keys
+2. **Create New Key** - Wizard for creating new keys
+3. **Cryptographic Operations** - Sign, encrypt, and decrypt operations
+4. **Approvals Management** - Manage dual-control approvals
+5. **Audit Log Viewer** - View and verify audit logs
+6. **Settings** - Configure connection and authentication settings
+7. **Help** - Documentation and keyboard shortcuts
 
 ## Future Development
 
-This is a basic implementation that demonstrates the TUI concept. Future enhancements could include:
+This enhanced implementation provides a foundation for a full-featured TUI that will eventually include:
 
 - Integration with the HSM server API
 - Real-time data display
 - Interactive key creation and management
 - Detailed audit log inspection
 - Approval workflow controls
+- Enhanced UI components and widgets

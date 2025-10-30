@@ -1,4 +1,16 @@
-import base64
+"""
+FerroHSM Python SDK Example
+
+This example demonstrates how to use the FerroHSM REST API from Python.
+It also shows how to integrate with the PKCS#11 interface for legacy applications.
+
+Features demonstrated:
+- Key creation with dual-control approval
+- Cryptographic signing operations
+- Approval workflow management
+- Metrics collection
+- PKCS#11 integration (when available)
+"""
 import hashlib
 import hmac
 import json

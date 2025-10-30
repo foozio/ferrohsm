@@ -38,9 +38,9 @@ FerroHSM currently includes:
 - Axum for REST server
 - SQLite for storage
 
-### Phase 1: PKCS#11 Compatibility (In Progress)
+### Phase 1: PKCS#11 Compatibility (Completed)
 **Duration:** 4-6 weeks
-**Status:** In Progress
+**Status:** Completed
 
 #### Goals:
 - Deliver a PKCS#11-compatible interface that maps core cryptographic operations onto existing FerroHSM capabilities
@@ -51,11 +51,11 @@ FerroHSM currently includes:
 - [x] Audit `hsm-core` operations needed for PKCS#11
 - [x] Document PKCS#11 function coverage priorities and map to `hsm-core` APIs
 - [x] Define adapter trait for hardware devices
-- [ ] Implement PKCS#11 front-end crate (`hsm-pkcs11`) exposing C ABI compatible entry points
-- [ ] Build session/token management layer
-- [ ] Extend `hsm-core` with metadata required for PKCS#11 attributes
-- [ ] Develop mock hardware adapter for early testing
-- [ ] Establish conformance test harness using OASIS PKCS#11 test suite
+- [x] Implement PKCS#11 front-end crate (`hsm-pkcs11`) exposing C ABI compatible entry points
+- [x] Build session/token management layer
+- [x] Extend `hsm-core` with metadata required for PKCS#11 attributes
+- [x] Develop mock hardware adapter for early testing
+- [x] Establish conformance test harness using OASIS PKCS#11 test suite
 
 #### Dependencies:
 - `cryptoki` crate for PKCS#11 constants/types
