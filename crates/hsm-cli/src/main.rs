@@ -333,12 +333,12 @@ async fn main() -> anyhow::Result<()> {
 
 fn build_client(cli: &Cli) -> anyhow::Result<Client> {
     let mut builder = Client::builder().timeout(Duration::from_secs(10));
-    
+
     // Skip certificate verification if insecure flag is set
     if cli.insecure {
         builder = builder.danger_accept_invalid_certs(true);
     }
-    
+
     if let (Some(cert_path), Some(key_path)) = (&cli.client_cert, &cli.client_key) {
         let cert = fs::read(cert_path)
             .with_context(|| format!("reading client cert {}", cert_path.display()))?;

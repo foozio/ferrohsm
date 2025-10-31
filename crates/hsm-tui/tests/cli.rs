@@ -1,8 +1,8 @@
 #[cfg(test)]
 mod tests {
     use assert_cmd::assert::OutputAssertExt;
-    use predicates::prelude::*;
     use escargot::CargoBuild;
+    use predicates::prelude::*;
 
     #[test]
     fn test_help_output() {
@@ -11,7 +11,9 @@ mod tests {
         cmd.assert()
             .success()
             .stdout(predicate::str::contains("FerroHSM TUI"))
-            .stdout(predicate::str::contains("Text-based User Interface for FerroHSM"));
+            .stdout(predicate::str::contains(
+                "Text-based User Interface for FerroHSM",
+            ));
     }
 
     #[test]
@@ -28,10 +30,9 @@ mod tests {
         // Test that the binary can be executed and returns a proper error code
         // when run without a terminal (which is expected)
         let mut cmd = CargoBuild::new().bin("hsm-tui").run().unwrap().command();
-        cmd.assert()
-            .failure(); // Expected to fail without a terminal
+        cmd.assert().failure(); // Expected to fail without a terminal
     }
-    
+
     #[test]
     fn test_endpoint_argument() {
         let mut cmd = CargoBuild::new().bin("hsm-tui").run().unwrap().command();
@@ -41,6 +42,8 @@ mod tests {
         cmd.assert()
             .success()
             .stdout(predicate::str::contains("--endpoint <ENDPOINT>"))
-            .stdout(predicate::str::contains("[default: https://localhost:8443]"));
+            .stdout(predicate::str::contains(
+                "[default: https://localhost:8443]",
+            ));
     }
 }

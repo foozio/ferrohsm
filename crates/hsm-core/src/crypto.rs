@@ -77,6 +77,7 @@ fn mlkem_level_from_label(label: &str) -> HsmResult<MlKemSecurityLevel> {
     }
 }
 
+#[derive(Debug)]
 pub struct CryptoEngine {
     master_key: [u8; 32],
     hmac_key: [u8; 32],

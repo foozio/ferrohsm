@@ -285,25 +285,28 @@ impl KeyMaterialType {
     }
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub enum KeyMaterial {
-    Symmetric {
-        key: Vec<u8>,
-    },
+    #[serde(rename = "symmetric")]
+    Symmetric { key: Vec<u8> },
+    #[serde(rename = "rsa")]
     Rsa {
         private_pem: String,
         public_pem: String,
     },
+    #[serde(rename = "ec")]
     Ec {
         curve: KeyMaterialType,
         private_pem: String,
         public_pem: String,
     },
+    #[serde(rename = "post_quantum")]
     PostQuantum {
         public_key: Vec<u8>,
         private_key: Option<Vec<u8>>,
         algorithm: String,
     },
+    #[serde(rename = "hybrid")]
     Hybrid {
         ec_curve: KeyMaterialType,
         ec_private_pem: Option<String>,

@@ -3,7 +3,7 @@ use clap::Parser;
 use crossterm::{
     event::{self, DisableMouseCapture, EnableMouseCapture, Event, KeyCode},
     execute,
-    terminal::{disable_raw_mode, enable_raw_mode, EnterAlternateScreen, LeaveAlternateScreen},
+    terminal::{EnterAlternateScreen, LeaveAlternateScreen, disable_raw_mode, enable_raw_mode},
 };
 use ratatui::{
     prelude::*,
@@ -110,27 +110,25 @@ impl App {
     fn run<B: Backend>(&mut self, terminal: &mut Terminal<B>) -> Result<()> {
         loop {
             self.draw(terminal)?;
-            
+
             if let Event::Key(key) = event::read()? {
                 match self.state.mode {
                     AppMode::MainMenu => {
                         self.handle_main_menu_key(key.code)?;
                     }
-                    _ => {
-                        match key.code {
-                            KeyCode::Char('q') | KeyCode::Esc => {
-                                if let AppMode::MainMenu = self.state.mode {
-                                    self.state.quit = true;
-                                } else {
-                                    self.state.mode = AppMode::MainMenu;
-                                }
+                    _ => match key.code {
+                        KeyCode::Char('q') | KeyCode::Esc => {
+                            if let AppMode::MainMenu = self.state.mode {
+                                self.state.quit = true;
+                            } else {
+                                self.state.mode = AppMode::MainMenu;
                             }
-                            _ => {}
                         }
-                    }
+                        _ => {}
+                    },
                 }
             }
-            
+
             if self.state.quit {
                 break;
             }
@@ -149,79 +147,79 @@ impl App {
             KeyCode::Up => {
                 self.state.previous_menu_item();
             }
-            KeyCode::Enter => {
-                match self.state.main_menu_state.selected() {
-                    Some(0) => self.state.mode = AppMode::KeysList,
-                    Some(1) => self.state.mode = AppMode::KeyCreate,
-                    Some(2) => self.state.mode = AppMode::KeyOperations,
-                    Some(3) => self.state.mode = AppMode::ApprovalsList,
-                    Some(4) => self.state.mode = AppMode::AuditViewer,
-                    Some(5) => self.state.mode = AppMode::Settings,
-                    Some(6) => self.state.mode = AppMode::Help,
-                    Some(7) => self.state.quit = true,
-                    _ => {}
-                }
-            }
+            KeyCode::Enter => match self.state.main_menu_state.selected() {
+                Some(0) => self.state.mode = AppMode::KeysList,
+                Some(1) => self.state.mode = AppMode::KeyCreate,
+                Some(2) => self.state.mode = AppMode::KeyOperations,
+                Some(3) => self.state.mode = AppMode::ApprovalsList,
+                Some(4) => self.state.mode = AppMode::AuditViewer,
+                Some(5) => self.state.mode = AppMode::Settings,
+                Some(6) => self.state.mode = AppMode::Help,
+                Some(7) => self.state.quit = true,
+                _ => {}
+            },
             _ => {}
         }
         Ok(())
     }
 
     fn draw<B: Backend>(&self, terminal: &mut Terminal<B>) -> Result<()> {
-        terminal.draw(|f| {
-            let chunks = Layout::default()
-                .direction(Direction::Vertical)
-                .constraints([
-                    Constraint::Length(3),  // Header
-                    Constraint::Min(0),     // Main content
-                    Constraint::Length(1),  // Footer
-                ])
-                .split(f.area());
+        terminal
+            .draw(|f| {
+                let chunks = Layout::default()
+                    .direction(Direction::Vertical)
+                    .constraints([
+                        Constraint::Length(3), // Header
+                        Constraint::Min(0),    // Main content
+                        Constraint::Length(1), // Footer
+                    ])
+                    .split(f.area());
 
-            // Header
-            let header = Paragraph::new("FerroHSM - Hardware Security Module")
-                .style(Style::default().fg(Color::White).bg(Color::Blue))
-                .alignment(Alignment::Center);
-            f.render_widget(header, chunks[0]);
+                // Header
+                let header = Paragraph::new("FerroHSM - Hardware Security Module")
+                    .style(Style::default().fg(Color::White).bg(Color::Blue))
+                    .alignment(Alignment::Center);
+                f.render_widget(header, chunks[0]);
 
-            // Main content based on mode
-            match self.state.mode {
-                AppMode::MainMenu => {
-                    self.draw_main_menu(f, chunks[1]);
+                // Main content based on mode
+                match self.state.mode {
+                    AppMode::MainMenu => {
+                        self.draw_main_menu(f, chunks[1]);
+                    }
+                    AppMode::KeysList => {
+                        self.draw_keys_list(f, chunks[1]);
+                    }
+                    AppMode::KeyCreate => {
+                        self.draw_key_create(f, chunks[1]);
+                    }
+                    AppMode::KeyOperations => {
+                        self.draw_key_operations(f, chunks[1]);
+                    }
+                    AppMode::ApprovalsList => {
+                        self.draw_approvals_list(f, chunks[1]);
+                    }
+                    AppMode::AuditViewer => {
+                        self.draw_audit_viewer(f, chunks[1]);
+                    }
+                    AppMode::Settings => {
+                        self.draw_settings(f, chunks[1]);
+                    }
+                    AppMode::Help => {
+                        self.draw_help(f, chunks[1]);
+                    }
                 }
-                AppMode::KeysList => {
-                    self.draw_keys_list(f, chunks[1]);
-                }
-                AppMode::KeyCreate => {
-                    self.draw_key_create(f, chunks[1]);
-                }
-                AppMode::KeyOperations => {
-                    self.draw_key_operations(f, chunks[1]);
-                }
-                AppMode::ApprovalsList => {
-                    self.draw_approvals_list(f, chunks[1]);
-                }
-                AppMode::AuditViewer => {
-                    self.draw_audit_viewer(f, chunks[1]);
-                }
-                AppMode::Settings => {
-                    self.draw_settings(f, chunks[1]);
-                }
-                AppMode::Help => {
-                    self.draw_help(f, chunks[1]);
-                }
-            }
 
-            // Footer
-            let footer_text = match self.state.mode {
-                AppMode::MainMenu => "↑↓: Navigate | Enter: Select | q/Esc: Quit",
-                _ => "q/Esc: Back to Menu",
-            };
-            let footer = Paragraph::new(footer_text)
-                .style(Style::default().fg(Color::White).bg(Color::DarkGray))
-                .alignment(Alignment::Center);
-            f.render_widget(footer, chunks[2]);
-        }).map_err(|e| anyhow::anyhow!("Failed to draw terminal: {:?}", e))?;
+                // Footer
+                let footer_text = match self.state.mode {
+                    AppMode::MainMenu => "↑↓: Navigate | Enter: Select | q/Esc: Quit",
+                    _ => "q/Esc: Back to Menu",
+                };
+                let footer = Paragraph::new(footer_text)
+                    .style(Style::default().fg(Color::White).bg(Color::DarkGray))
+                    .alignment(Alignment::Center);
+                f.render_widget(footer, chunks[2]);
+            })
+            .map_err(|e| anyhow::anyhow!("Failed to draw terminal: {:?}", e))?;
         Ok(())
     }
 
@@ -238,11 +236,7 @@ impl App {
         ];
 
         let list = List::new(items)
-            .block(
-                Block::default()
-                    .borders(Borders::ALL)
-                    .title("Main Menu"),
-            )
+            .block(Block::default().borders(Borders::ALL).title("Main Menu"))
             .highlight_style(Style::default().bg(Color::Blue).fg(Color::White))
             .highlight_symbol(">> ");
 
@@ -251,37 +245,61 @@ impl App {
 
     fn draw_keys_list(&self, f: &mut Frame, area: Rect) {
         let content = Paragraph::new("Keys List View\n\nList and manage cryptographic keys.")
-            .block(Block::default().borders(Borders::ALL).title("Keys Management"));
+            .block(
+                Block::default()
+                    .borders(Borders::ALL)
+                    .title("Keys Management"),
+            );
         f.render_widget(content, area);
     }
 
     fn draw_key_create(&self, f: &mut Frame, area: Rect) {
-        let content = Paragraph::new("Key Creation Wizard\n\nCreate new cryptographic keys with various algorithms.")
-            .block(Block::default().borders(Borders::ALL).title("Create New Key"));
+        let content = Paragraph::new(
+            "Key Creation Wizard\n\nCreate new cryptographic keys with various algorithms.",
+        )
+        .block(
+            Block::default()
+                .borders(Borders::ALL)
+                .title("Create New Key"),
+        );
         f.render_widget(content, area);
     }
 
     fn draw_key_operations(&self, f: &mut Frame, area: Rect) {
-        let content = Paragraph::new("Cryptographic Operations\n\nPerform sign, encrypt, and decrypt operations.")
-            .block(Block::default().borders(Borders::ALL).title("Cryptographic Operations"));
+        let content = Paragraph::new(
+            "Cryptographic Operations\n\nPerform sign, encrypt, and decrypt operations.",
+        )
+        .block(
+            Block::default()
+                .borders(Borders::ALL)
+                .title("Cryptographic Operations"),
+        );
         f.render_widget(content, area);
     }
 
     fn draw_approvals_list(&self, f: &mut Frame, area: Rect) {
         let content = Paragraph::new("Approvals Management\n\nManage dual-control approvals.")
-            .block(Block::default().borders(Borders::ALL).title("Approvals Management"));
+            .block(
+                Block::default()
+                    .borders(Borders::ALL)
+                    .title("Approvals Management"),
+            );
         f.render_widget(content, area);
     }
 
     fn draw_audit_viewer(&self, f: &mut Frame, area: Rect) {
-        let content = Paragraph::new("Audit Log Viewer\n\nView and verify audit logs.")
-            .block(Block::default().borders(Borders::ALL).title("Audit Log Viewer"));
+        let content = Paragraph::new("Audit Log Viewer\n\nView and verify audit logs.").block(
+            Block::default()
+                .borders(Borders::ALL)
+                .title("Audit Log Viewer"),
+        );
         f.render_widget(content, area);
     }
 
     fn draw_settings(&self, f: &mut Frame, area: Rect) {
-        let content = Paragraph::new("Settings\n\nConfigure connection and authentication settings.")
-            .block(Block::default().borders(Borders::ALL).title("Settings"));
+        let content =
+            Paragraph::new("Settings\n\nConfigure connection and authentication settings.")
+                .block(Block::default().borders(Borders::ALL).title("Settings"));
         f.render_widget(content, area);
     }
 
@@ -296,7 +314,7 @@ fn init_terminal() -> Result<Terminal<CrosstermBackend<std::io::Stdout>>> {
     enable_raw_mode()?;
     let mut stdout = io::stdout();
     execute!(stdout, EnterAlternateScreen, EnableMouseCapture)?;
-    
+
     let backend = CrosstermBackend::new(stdout);
     let mut terminal = Terminal::new(backend)?;
     terminal.hide_cursor()?;
@@ -316,7 +334,7 @@ fn restore_terminal(terminal: &mut Terminal<CrosstermBackend<std::io::Stdout>>) 
 
 fn main() -> Result<()> {
     let cli = Cli::parse();
-    
+
     // Setup panic hook to restore terminal
     let original_hook = panic::take_hook();
     panic::set_hook(Box::new(move |panic_info| {
@@ -326,13 +344,13 @@ fn main() -> Result<()> {
     }));
 
     let mut terminal = init_terminal()?;
-    
+
     let app_result = {
         let mut app = App::new(cli);
         app.run(&mut terminal)
     };
 
     restore_terminal(&mut terminal)?;
-    
+
     app_result
 }

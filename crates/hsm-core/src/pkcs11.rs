@@ -1,6 +1,6 @@
 //! PKCS#11 metadata support for hsm-core
 
-use crate::models::{KeyMetadata, KeyPurpose, KeyAlgorithm};
+use crate::models::{KeyAlgorithm, KeyMetadata, KeyPurpose};
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 
@@ -315,36 +315,36 @@ impl Pkcs11Metadata {
             attributes: HashMap::new(),
         }
     }
-    
+
     /// Create PKCS#11 metadata from key metadata
     pub fn from_key_metadata(metadata: &KeyMetadata) -> Self {
         let mut pkcs11_meta = Self::new();
-        
+
         // Set object class based on key usage
         pkcs11_meta.object_class = if metadata.usage.contains(&KeyPurpose::Sign) {
             Pkcs11ObjectClass::PrivateKey
         } else {
             Pkcs11ObjectClass::SecretKey
         };
-        
+
         // Set key type
         pkcs11_meta.key_type = Some(Self::key_algorithm_to_pkcs11_type(metadata.algorithm));
-        
+
         // Set label and id
         pkcs11_meta.label = metadata.description.clone();
         pkcs11_meta.id = Some(metadata.id.clone());
-        
+
         // Set allowed mechanisms based on key usage
         pkcs11_meta.allowed_mechanisms = Self::get_allowed_mechanisms(metadata);
-        
+
         pkcs11_meta
     }
-    
+
     /// Convert KeyAlgorithm to PKCS#11 key type
     fn key_algorithm_to_pkcs11_type(algorithm: crate::models::KeyAlgorithm) -> Pkcs11KeyType {
         use crate::models::KeyAlgorithm;
         use Pkcs11KeyType::*;
-        
+
         match algorithm {
             KeyAlgorithm::Aes256Gcm => Aes,
             KeyAlgorithm::Rsa2048 | KeyAlgorithm::Rsa4096 => Rsa,
@@ -353,11 +353,11 @@ impl Pkcs11Metadata {
             _ => GenericSecret,
         }
     }
-    
+
     /// Get allowed mechanisms based on key metadata
     fn get_allowed_mechanisms(metadata: &KeyMetadata) -> Vec<Pkcs11MechanismType> {
         let mut mechanisms = Vec::new();
-        
+
         for purpose in &metadata.usage {
             match purpose {
                 KeyPurpose::Encrypt => {
@@ -366,22 +366,22 @@ impl Pkcs11Metadata {
                 KeyPurpose::Decrypt => {
                     mechanisms.push(Pkcs11MechanismType::AesGcm);
                 }
-                KeyPurpose::Sign => {
-                    match metadata.algorithm {
-                        KeyAlgorithm::P256 => mechanisms.push(Pkcs11MechanismType::Ecdsa),
-                        KeyAlgorithm::P384 => mechanisms.push(Pkcs11MechanismType::Ecdsa),
-                        KeyAlgorithm::Rsa2048 | KeyAlgorithm::Rsa4096 => mechanisms.push(Pkcs11MechanismType::RsaPkcs),
-                        _ => {}
+                KeyPurpose::Sign => match metadata.algorithm {
+                    KeyAlgorithm::P256 => mechanisms.push(Pkcs11MechanismType::Ecdsa),
+                    KeyAlgorithm::P384 => mechanisms.push(Pkcs11MechanismType::Ecdsa),
+                    KeyAlgorithm::Rsa2048 | KeyAlgorithm::Rsa4096 => {
+                        mechanisms.push(Pkcs11MechanismType::RsaPkcs)
                     }
-                }
-                KeyPurpose::Verify => {
-                    match metadata.algorithm {
-                        KeyAlgorithm::P256 => mechanisms.push(Pkcs11MechanismType::Ecdsa),
-                        KeyAlgorithm::P384 => mechanisms.push(Pkcs11MechanismType::Ecdsa),
-                        KeyAlgorithm::Rsa2048 | KeyAlgorithm::Rsa4096 => mechanisms.push(Pkcs11MechanismType::RsaPkcs),
-                        _ => {}
+                    _ => {}
+                },
+                KeyPurpose::Verify => match metadata.algorithm {
+                    KeyAlgorithm::P256 => mechanisms.push(Pkcs11MechanismType::Ecdsa),
+                    KeyAlgorithm::P384 => mechanisms.push(Pkcs11MechanismType::Ecdsa),
+                    KeyAlgorithm::Rsa2048 | KeyAlgorithm::Rsa4096 => {
+                        mechanisms.push(Pkcs11MechanismType::RsaPkcs)
                     }
-                }
+                    _ => {}
+                },
                 KeyPurpose::Wrap => {
                     mechanisms.push(Pkcs11MechanismType::RsaPkcs);
                 }
@@ -390,7 +390,7 @@ impl Pkcs11Metadata {
                 }
             }
         }
-        
+
         mechanisms
     }
 }
