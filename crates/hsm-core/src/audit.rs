@@ -62,15 +62,63 @@ pub trait AuditLog: Send + Sync {
     fn record(&self, record: AuditRecord) -> HsmResult<()>;
 }
 
+/// Trait for anchoring audit hashes to external stores
+pub trait AuditAnchor: Send + Sync {
+    fn anchor_hash(&self, hash: &str, timestamp: OffsetDateTime) -> HsmResult<()>;
+    fn verify_anchor(&self, hash: &str) -> HsmResult<bool>;
+}
+
+/// Mock audit anchor for testing (logs to console)
+pub struct MockAuditAnchor;
+
+impl MockAuditAnchor {
+    pub fn new() -> Self {
+        Self
+    }
+}
+
+impl AuditAnchor for MockAuditAnchor {
+    fn anchor_hash(&self, hash: &str, timestamp: OffsetDateTime) -> HsmResult<()> {
+        tracing::info!("Anchoring audit hash {} at {}", hash, timestamp);
+        // In a real implementation, this would send to blockchain/external store
+        Ok(())
+    }
+
+    fn verify_anchor(&self, hash: &str) -> HsmResult<bool> {
+        tracing::info!("Verifying anchor for hash {}", hash);
+        // In a real implementation, this would check external store
+        Ok(true)
+    }
+}
+
 pub type AuditSink = Box<dyn AuditLog>;
+
+/// Key rotation policy
+#[derive(Debug, Clone)]
+pub struct KeyRotationPolicy {
+    pub max_records: Option<u64>,
+    pub max_age_seconds: Option<u64>,
+}
+
+impl Default for KeyRotationPolicy {
+    fn default() -> Self {
+        Self {
+            max_records: Some(10000), // Rotate every 10k records
+            max_age_seconds: Some(30 * 24 * 60 * 60), // Rotate every 30 days
+        }
+    }
+}
 
 /// Append-only audit logger that writes JSON lines and leverages file locks to emit
 /// tamper-evident records.
 pub struct FileAuditLog {
     path: PathBuf,
-    key: Option<Vec<u8>>,
+    key: parking_lot::Mutex<Option<Vec<u8>>>,
     lock: Mutex<()>,
     chain: Mutex<AuditChainState>,
+    anchor: Option<Box<dyn AuditAnchor>>,
+    rotation_policy: KeyRotationPolicy,
+    key_created_at: parking_lot::Mutex<Option<OffsetDateTime>>,
 }
 
 impl FileAuditLog {
@@ -84,15 +132,126 @@ impl FileAuditLog {
         }
         Ok(Self {
             path,
-            key: None,
+            key: parking_lot::Mutex::new(None),
             lock: Mutex::new(()),
             chain: Mutex::new(AuditChainState::new()),
+            anchor: None,
+            rotation_policy: KeyRotationPolicy::default(),
+            key_created_at: parking_lot::Mutex::new(None),
         })
     }
 
     pub fn with_signing_key(mut self, key: Vec<u8>) -> Self {
-        self.key = Some(key);
+        *self.key.lock() = Some(key);
+        *self.key_created_at.lock() = Some(OffsetDateTime::now_utc());
         self
+    }
+
+    pub fn with_anchor(mut self, anchor: Box<dyn AuditAnchor>) -> Self {
+        self.anchor = Some(anchor);
+        self
+    }
+
+    pub fn with_rotation_policy(mut self, policy: KeyRotationPolicy) -> Self {
+        self.rotation_policy = policy;
+        self
+    }
+
+    /// Rotate the signing key for future audit records
+    pub fn rotate_signing_key(&self, new_key: Vec<u8>) -> HsmResult<()> {
+        *self.key.lock() = Some(new_key);
+        *self.key_created_at.lock() = Some(OffsetDateTime::now_utc());
+        Ok(())
+    }
+
+    /// Check if key rotation is needed based on policy
+    fn should_rotate_key(&self, chain: &AuditChainState) -> bool {
+        let now = OffsetDateTime::now_utc();
+
+        // Check record count
+        if let Some(max_records) = self.rotation_policy.max_records {
+            if chain.record_count >= max_records {
+                return true;
+            }
+        }
+
+        // Check age
+        if let (Some(max_age), Some(created_at)) = (self.rotation_policy.max_age_seconds, *self.key_created_at.lock()) {
+            if (now - created_at).as_seconds_f64() >= max_age as f64 {
+                return true;
+            }
+        }
+
+        false
+    }
+
+    /// Generate a new random key for rotation
+    fn generate_new_key() -> Vec<u8> {
+        use rand::RngCore;
+        let mut key = vec![0u8; 32];
+        rand::thread_rng().fill_bytes(&mut key);
+        key
+    }
+
+    /// Verify the integrity of the audit log by checking hash chains
+    pub fn verify_integrity(&self) -> HsmResult<bool> {
+        if !self.path.exists() {
+            return Ok(true); // Empty log is valid
+        }
+
+        fs_utils::ensure_file_permissions(&self.path).map_err(HsmError::audit)?;
+        let file = std::fs::File::open(&self.path).map_err(HsmError::audit)?;
+        let reader = BufReader::new(file);
+
+        let mut prev_hash: Option<String> = None;
+        for line in reader.lines() {
+            let line = line.map_err(HsmError::audit)?;
+            if line.trim().is_empty() {
+                continue;
+            }
+            let event: AuditEvent = serde_json::from_str(&line).map_err(HsmError::audit)?;
+
+            // Verify the hash chain
+            let expected_hash = compute_event_hash(
+                &event.record,
+                event.signature.as_deref(),
+                prev_hash.as_deref(),
+            )?;
+            if event.hash != expected_hash {
+                return Ok(false);
+            }
+
+            // Verify signature if present
+            if let (Some(sig), Some(key)) = (&event.signature, self.key.lock().as_ref()) {
+                if !crate::crypto::verify_audit_signature(key, &event.record, sig) {
+                    return Ok(false);
+                }
+            }
+
+            prev_hash = Some(event.hash);
+        }
+
+        Ok(true)
+    }
+
+    /// Perform periodic checkpoint verification including external anchor verification
+    pub fn checkpoint_verification(&self) -> HsmResult<()> {
+        // Verify internal integrity
+        if !self.verify_integrity()? {
+            return Err(HsmError::audit("Audit log integrity check failed"));
+        }
+
+        // Verify external anchors if available
+        if let Some(anchor) = &self.anchor {
+            let chain = self.chain.lock();
+            if let Some(last_hash) = &chain.last_hash {
+                if !anchor.verify_anchor(last_hash)? {
+                    return Err(HsmError::audit("External anchor verification failed"));
+                }
+            }
+        }
+
+        Ok(())
     }
 
     fn load_last_hash(&self) -> HsmResult<Option<String>> {
@@ -140,16 +299,29 @@ impl FileAuditLog {
 impl AuditLog for FileAuditLog {
     fn record(&self, record: AuditRecord) -> HsmResult<()> {
         let _guard = self.lock.lock();
+
+        // Extract timestamp before moving record
+        let timestamp = record.timestamp;
+
+        // Check if key rotation is needed
+        let mut chain = self.chain.lock();
+        if self.should_rotate_key(&chain) {
+            let new_key = Self::generate_new_key();
+            drop(chain); // Release lock before calling rotate
+            self.rotate_signing_key(new_key)?;
+            chain = self.chain.lock(); // Re-acquire
+        }
+
         let mut options = OpenOptions::new();
         options.create(true).append(true);
         let file = fs_utils::open_secure(&self.path, &mut options).map_err(HsmError::audit)?;
         FileExt::lock_exclusive(&file).map_err(HsmError::audit)?;
         let signature = self
             .key
+            .lock()
             .as_ref()
             .map(|key| crate::crypto::sign_audit_record(key, &record));
 
-        let mut chain = self.chain.lock();
         if !chain.initialized {
             chain.last_hash = self.load_last_hash()?;
             chain.initialized = true;
@@ -168,8 +340,17 @@ impl AuditLog for FileAuditLog {
         writer.write_all(b"\n").map_err(HsmError::audit)?;
         writer.flush().map_err(HsmError::audit)?;
         file.sync_all().map_err(HsmError::audit)?;
-        chain.last_hash = Some(hash);
+        chain.last_hash = Some(hash.clone());
         FileExt::unlock(&file).map_err(HsmError::audit)?;
+
+        // Anchor hash to external store periodically (every 100 records)
+        if let Some(anchor) = &self.anchor {
+            if chain.record_count % 100 == 0 {
+                anchor.anchor_hash(&hash, timestamp)?;
+            }
+        }
+        chain.record_count += 1;
+
         Ok(())
     }
 }
@@ -384,6 +565,7 @@ pub fn compute_event_hash(
 struct AuditChainState {
     initialized: bool,
     last_hash: Option<String>,
+    record_count: u64,
 }
 
 impl AuditChainState {

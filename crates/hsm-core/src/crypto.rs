@@ -1282,3 +1282,8 @@ pub fn sign_audit_record(key: &[u8], record: &crate::audit::AuditRecord) -> Stri
     let tag = mac.finalize().into_bytes();
     hex::encode(tag)
 }
+
+pub fn verify_audit_signature(key: &[u8], record: &crate::audit::AuditRecord, signature: &str) -> bool {
+    let expected = sign_audit_record(key, record);
+    expected == signature
+}

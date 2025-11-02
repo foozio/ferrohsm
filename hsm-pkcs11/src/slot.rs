@@ -4,12 +4,14 @@ use cryptoki::types::*;
 use std::collections::HashMap;
 
 /// Represents a PKCS#11 slot
+#[derive(Clone)]
 pub struct Slot {
     pub id: CK_SLOT_ID,
     pub token: Option<Token>,
 }
 
 /// Represents a token in a slot
+#[derive(Clone)]
 pub struct Token {
     pub label: String,
     pub serial_number: String,
@@ -19,6 +21,7 @@ pub struct Token {
 }
 
 /// Manages available slots
+#[derive(Clone)]
 pub struct SlotManager {
     slots: HashMap<CK_SLOT_ID, Slot>,
 }

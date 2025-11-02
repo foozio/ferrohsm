@@ -2,9 +2,9 @@
 class Ferrohsm < Formula
   desc "Software-based Hardware Security Module implemented in Rust"
   homepage "https://github.com/foozio/ferrohsm"
-  url "https://github.com/foozio/ferrohsm/releases/download/v0.3.0/ferrohsm-0.3.0-macos.tar.gz"
-  sha256 "852b89a1cb835a18e6ec5f585b0d5d7bbe821855b6b5318ef3b8e61f961ab59b"
-  version "0.3.0"
+  url "https://github.com/foozio/ferrohsm/releases/download/v0.4.0/ferrohsm-0.4.0-macos.tar.gz"
+  sha256 "42c81fe7febf52766f291a7cecb32e1c162d2797a02e0a838a886b7fed9ee4d4"
+  version "0.4.0"
   license "MIT"
 
   def install

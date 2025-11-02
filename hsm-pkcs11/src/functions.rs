@@ -6,15 +6,34 @@ use crate::types::hsm_error_to_ckr;
 use crate::object::ObjectManager;
 use cryptoki::types::*;
 use std::sync::Mutex;
+use hsm_core::crypto::CryptoEngine;
 
 use crate::hardware::SoftHsmAdapter;
 
 // Global state managers
 lazy_static::lazy_static! {
-    static ref SLOT_MANAGER: Mutex<SlotManager> = Mutex::new(SlotManager::new());
-    static ref SESSION_MANAGER: Mutex<SessionManager> = Mutex::new(SessionManager::new(SlotManager::new()));
+    static ref SLOT_MANAGER: Mutex<SlotManager> = {
+        let mut manager = SlotManager::new();
+        // Add a default slot
+        manager.add_slot(crate::slot::Slot {
+            id: 1,
+            token: Some(crate::slot::Token {
+                label: "FerroHSM Token".to_string(),
+                serial_number: "00000001".to_string(),
+                model: "HSM".to_string(),
+                manufacturer: "FerroHSM".to_string(),
+                flags: 0,
+            }),
+        });
+        Mutex::new(manager)
+    };
+    static ref SESSION_MANAGER: Mutex<SessionManager> = {
+        let slot_manager = SLOT_MANAGER.lock().unwrap().clone();
+        Mutex::new(SessionManager::new(slot_manager))
+    };
     static ref SOFT_HSM_ADAPTER: Mutex<Option<SoftHsmAdapter>> = Mutex::new(None);
     static ref OBJECT_MANAGER: Mutex<ObjectManager> = Mutex::new(ObjectManager::new());
+    static ref CRYPTO_ENGINE: CryptoEngine = CryptoEngine::new([0u8; 32], [0u8; 32]);
 }
 
 /// Initialize the PKCS#11 library
@@ -48,8 +67,24 @@ pub extern "C" fn C_GetInfo(pInfo: CK_INFO_PTR) -> CK_RV {
         return CK_RV::CKR_ARGUMENTS_BAD;
     }
 
-    // In a real implementation, we would fill in the library information
-    // For now, we'll just return OK
+    unsafe {
+        (*pInfo).cryptokiVersion.major = 2;
+        (*pInfo).cryptokiVersion.minor = 40;
+
+        // Manufacturer ID (must be exactly 32 bytes, padded with spaces)
+        let manufacturer_id = b"FerroHSM                        ";
+        (*pInfo).manufacturerID.copy_from_slice(manufacturer_id);
+
+        // Library description (must be exactly 32 bytes, padded with spaces)
+        let library_description = b"FerroHSM PKCS#11 Module         ";
+        (*pInfo).libraryDescription.copy_from_slice(library_description);
+
+        (*pInfo).libraryVersion.major = 0;
+        (*pInfo).libraryVersion.minor = 3;
+
+        (*pInfo).flags = 0; // No special flags
+    }
+
     CK_RV::CKR_OK
 }
 
@@ -110,8 +145,24 @@ pub extern "C" fn C_GetSlotInfo(
         None => return CK_RV::CKR_SLOT_ID_INVALID,
     };
 
-    // In a real implementation, we would fill in the slot information
-    // For now, we'll just return OK
+    unsafe {
+        // Slot description (must be exactly 64 bytes, padded with spaces)
+        let slot_description = b"FerroHSM Virtual Slot                    ";
+        (*pInfo).slotDescription.copy_from_slice(slot_description);
+
+        // Manufacturer ID (must be exactly 32 bytes, padded with spaces)
+        let manufacturer_id = b"FerroHSM                        ";
+        (*pInfo).manufacturerID.copy_from_slice(manufacturer_id);
+
+        (*pInfo).flags = CKF_TOKEN_PRESENT | CKF_REMOVABLE_DEVICE | CKF_HW_SLOT;
+
+        (*pInfo).hardwareVersion.major = 0;
+        (*pInfo).hardwareVersion.minor = 1;
+
+        (*pInfo).firmwareVersion.major = 0;
+        (*pInfo).firmwareVersion.minor = 3;
+    }
+
     CK_RV::CKR_OK
 }
 
@@ -207,6 +258,61 @@ pub extern "C" fn C_GetSessionInfo(
     CK_RV::CKR_OK
 }
 
+/// Get information about a token
+#[no_mangle]
+pub extern "C" fn C_GetTokenInfo(
+    slotID: CK_SLOT_ID,
+    pInfo: CK_TOKEN_INFO_PTR,
+) -> CK_RV {
+    if pInfo.is_null() {
+        return CK_RV::CKR_ARGUMENTS_BAD;
+    }
+
+    let slot_manager = SLOT_MANAGER.lock().unwrap();
+    if slot_manager.get_slot(slotID).is_none() {
+        return CK_RV::CKR_SLOT_ID_INVALID;
+    }
+
+    unsafe {
+        // Label (must be exactly 32 bytes, padded with spaces)
+        let label = b"FerroHSM Token                   ";
+        (*pInfo).label.copy_from_slice(label);
+
+        // Manufacturer ID (must be exactly 32 bytes, padded with spaces)
+        let manufacturer_id = b"FerroHSM                        ";
+        (*pInfo).manufacturerID.copy_from_slice(manufacturer_id);
+
+        // Model (must be exactly 16 bytes, padded with spaces)
+        let model = b"HSM            ";
+        (*pInfo).model.copy_from_slice(model);
+
+        // Serial number (must be exactly 16 bytes, padded with spaces)
+        let serial_number = b"00000001        ";
+        (*pInfo).serialNumber.copy_from_slice(serial_number);
+
+        (*pInfo).flags = CKF_RNG | CKF_LOGIN_REQUIRED | CKF_USER_PIN_INITIALIZED | CKF_TOKEN_INITIALIZED;
+
+        (*pInfo).ulMaxSessionCount = CK_EFFECTIVELY_INFINITE;
+        (*pInfo).ulSessionCount = 0;
+        (*pInfo).ulMaxRwSessionCount = CK_EFFECTIVELY_INFINITE;
+        (*pInfo).ulRwSessionCount = 0;
+        (*pInfo).ulMaxPinLen = 128;
+        (*pInfo).ulMinPinLen = 4;
+        (*pInfo).ulTotalPublicMemory = CK_UNAVAILABLE_INFORMATION;
+        (*pInfo).ulFreePublicMemory = CK_UNAVAILABLE_INFORMATION;
+        (*pInfo).ulTotalPrivateMemory = CK_UNAVAILABLE_INFORMATION;
+        (*pInfo).ulFreePrivateMemory = CK_UNAVAILABLE_INFORMATION;
+
+        (*pInfo).hardwareVersion.major = 0;
+        (*pInfo).hardwareVersion.minor = 1;
+
+        (*pInfo).firmwareVersion.major = 0;
+        (*pInfo).firmwareVersion.minor = 3;
+    }
+
+    CK_RV::CKR_OK
+}
+
 /// Get the function list
 #[no_mangle]
 pub extern "C" fn C_GetFunctionList(
@@ -233,29 +339,45 @@ pub extern "C" fn C_GenerateKey(
     if pMechanism.is_null() || pTemplate.is_null() || phKey.is_null() {
         return CK_RV::CKR_ARGUMENTS_BAD;
     }
-    
+
     // Get the session
     let session_manager = SESSION_MANAGER.lock().unwrap();
     let session = match session_manager.get_session(hSession) {
         Some(session) => session,
         None => return CK_RV::CKR_SESSION_HANDLE_INVALID,
     };
-    
-    // Try to use SoftHSM adapter
-    let soft_hsm = SOFT_HSM_ADAPTER.lock().unwrap();
-    if let Some(adapter) = soft_hsm.as_ref() {
-        // For now, we'll just return a placeholder
-        // In a full implementation, we would use the SoftHSM adapter to generate the key
-        unsafe {
-            *phKey = 1; // Placeholder key handle
+
+    // Parse the mechanism
+    let mechanism = unsafe { *pMechanism };
+    let algorithm = match mechanism.mechanism {
+        CK_MECHANISM_TYPE::CKM_AES_KEY_GEN => hsm_core::models::KeyAlgorithm::Aes256Gcm,
+        _ => return CK_RV::CKR_MECHANISM_INVALID,
+    };
+
+    // Parse the template to get key attributes
+    let template = unsafe { std::slice::from_raw_parts(pTemplate, ulCount as usize) };
+
+    // Create key generation request
+    let request = hsm_core::models::KeyGenerationRequest {
+        algorithm,
+        usage: vec![hsm_core::models::KeyPurpose::Encrypt, hsm_core::models::KeyPurpose::Decrypt], // Default usage
+        policy_tags: vec![],
+        description: Some("PKCS#11 generated key".to_string()),
+    };
+
+    // Generate the key
+    match CRYPTO_ENGINE.generate_material(&request) {
+        Ok(generated) => {
+            // Add the key to the object manager
+            let mut object_manager = OBJECT_MANAGER.lock().unwrap();
+            let handle = object_manager.add_key_object(&generated.metadata);
+
+            unsafe {
+                *phKey = handle;
+            }
+            CK_RV::CKR_OK
         }
-        CK_RV::CKR_OK
-    } else {
-        // Fallback implementation
-        unsafe {
-            *phKey = 1; // Placeholder key handle
-        }
-        CK_RV::CKR_OK
+        Err(e) => hsm_error_to_ckr(e),
     }
 }
 
@@ -354,58 +476,18 @@ pub extern "C" fn C_Sign(
     if pData.is_null() || pulSignatureLen.is_null() {
         return CK_RV::CKR_ARGUMENTS_BAD;
     }
-    
+
     // Get the session
     let session_manager = SESSION_MANAGER.lock().unwrap();
     let session = match session_manager.get_session(hSession) {
         Some(session) => session,
         None => return CK_RV::CKR_SESSION_HANDLE_INVALID,
     };
-    
-    // Try to use SoftHSM adapter
-    let soft_hsm = SOFT_HSM_ADAPTER.lock().unwrap();
-    if let Some(adapter) = soft_hsm.as_ref() {
-        // For now, we'll just return a placeholder signature
-        // In a full implementation, we would use the SoftHSM adapter to sign the data
-        unsafe {
-            if !pSignature.is_null() {
-                // Copy signature to output buffer
-                let signature = [0x01, 0x02, 0x03, 0x04];
-                let signature_len = signature.len();
-                if *pulSignatureLen < signature_len as CK_ULONG {
-                    *pulSignatureLen = signature_len as CK_ULONG;
-                    return CK_RV::CKR_BUFFER_TOO_SMALL;
-                }
-                
-                std::ptr::copy_nonoverlapping(signature.as_ptr(), pSignature, signature_len);
-                *pulSignatureLen = signature_len as CK_ULONG;
-            } else {
-                // Just return the required buffer size
-                *pulSignatureLen = 4; // Placeholder signature length
-            }
-        }
-        CK_RV::CKR_OK
-    } else {
-        // Fallback implementation
-        unsafe {
-            if !pSignature.is_null() {
-                // Copy signature to output buffer
-                let signature = [0x01, 0x02, 0x03, 0x04];
-                let signature_len = signature.len();
-                if *pulSignatureLen < signature_len as CK_ULONG {
-                    *pulSignatureLen = signature_len as CK_ULONG;
-                    return CK_RV::CKR_BUFFER_TOO_SMALL;
-                }
-                
-                std::ptr::copy_nonoverlapping(signature.as_ptr(), pSignature, signature_len);
-                *pulSignatureLen = signature_len as CK_ULONG;
-            } else {
-                // Just return the required buffer size
-                *pulSignatureLen = 4; // Placeholder signature length
-            }
-        }
-        CK_RV::CKR_OK
-    }
+
+    // For now, we'll assume we're signing with a key that was previously set
+    // In a full implementation, we would need to track the signing key per session
+    // For this placeholder, we'll just return an error
+    CK_RV::CKR_OPERATION_NOT_INITIALIZED
 }
 
 /// Verify signature

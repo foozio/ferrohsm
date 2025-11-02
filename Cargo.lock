@@ -1981,7 +1981,7 @@ dependencies = [
 
 [[package]]
 name = "hsm-cli"
-version = "0.3.0"
+version = "0.4.0"
 dependencies = [
  "anyhow",
  "base64",
@@ -1999,7 +1999,7 @@ dependencies = [
 
 [[package]]
 name = "hsm-core"
-version = "0.3.0"
+version = "0.4.0"
 dependencies = [
  "aes-gcm",
  "anyhow",
@@ -2035,7 +2035,7 @@ dependencies = [
 
 [[package]]
 name = "hsm-pkcs11"
-version = "0.3.0"
+version = "0.4.0"
 dependencies = [
  "anyhow",
  "cryptoki",
@@ -2052,7 +2052,7 @@ dependencies = [
 
 [[package]]
 name = "hsm-server"
-version = "0.3.0"
+version = "0.4.0"
 dependencies = [
  "anyhow",
  "axum",
@@ -2097,7 +2097,7 @@ dependencies = [
 
 [[package]]
 name = "hsm-tui"
-version = "0.3.0"
+version = "0.4.0"
 dependencies = [
  "anyhow",
  "assert_cmd",
