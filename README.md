@@ -5,7 +5,7 @@ FerroHSM is a software-based Hardware Security Module implemented in Rust with S
 ## What's New in v0.3.0
 
 - **PKCS#11 Interface**: Full PKCS#11 v2.40 compliant interface for legacy application compatibility
-- **Enhanced TUI**: Improved text-based user interface with menu-based navigation
+- **Enhanced TUI**: Advanced text-based user interface with ATAC-inspired modular architecture, syntax highlighting, customizable themes, and comprehensive interactive management
 - **Homebrew Distribution**: One-command installation for macOS and Linux users
 - **Comprehensive Documentation**: Complete API reference and user guides
 
@@ -15,7 +15,7 @@ FerroHSM is a software-based Hardware Security Module implemented in Rust with S
 - `hsm-server`: Axum-based HTTPS service delivering REST APIs and a management UI surfacing approvals, audit trails, and live metrics with JWT authentication and optional mutual TLS support.
 - `hsm-cli`: administrative client for day-to-day operations built on top of the REST API with built-in JWT issuance.
 - `hsm-pkcs11`: PKCS#11 interface implementation providing compatibility with legacy applications and hardware security modules.
-- `hsm-tui`: text-based user interface for interactive HSM management directly from the terminal.
+- `hsm-tui`: advanced text-based user interface with ATAC-inspired modular design, syntax highlighting, customizable themes, and comprehensive key management capabilities.
 
 ## Post-Quantum Cryptography Support
 

@@ -17,6 +17,13 @@ crossterm = "0.28"
 reqwest = { version = "0.12", features = ["json"] }
 base64 = { workspace = true }
 uuid = { workspace = true }
+crokey = "1.1"
+syntect = "5.3"
+tui-textarea = "0.7"
+throbber-widgets-tui = "0.8"
+tui-tree-widget = "0.23"
+directories = { workspace = true }
+toml = { workspace = true }
 
 [dev-dependencies]
 assert_cmd = "2.1.1"
