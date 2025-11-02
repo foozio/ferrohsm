@@ -2,6 +2,8 @@
 //!
 //! Provides advanced key binding support using crokey.
 
+#![allow(dead_code)]
+
 use crokey::KeyCombination;
 use serde::{Deserialize, Serialize};
 

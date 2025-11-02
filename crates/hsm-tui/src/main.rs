@@ -46,6 +46,7 @@ struct Cli {
 }
 
 #[derive(Debug, Clone)]
+#[allow(dead_code)]
 enum AppMode {
     MainMenu,
     KeysList,
@@ -172,7 +173,7 @@ struct App {
 }
 
 impl App {
-    fn new(cli: Cli) -> Result<App> {
+    fn new(_cli: Cli) -> Result<App> {
         let config = AppConfig::load()?;
         let state = AppState::new(config)?;
         let event_loop = EventLoop::new(state.config.key_bindings.clone());

@@ -2,6 +2,8 @@
 //!
 //! Provides color schemes and styling utilities.
 
+#![allow(dead_code)]
+
 use ratatui::style::{Color as RatatuiColor, Style};
 use serde::{Deserialize, Serialize};
 

@@ -2,6 +2,8 @@
 //!
 //! Provides structured error types and user-friendly error display.
 
+#![allow(dead_code)]
+
 use std::fmt;
 
 /// Application error type

@@ -2,6 +2,9 @@
 //!
 //! Provides enhanced widgets like syntax highlighting, text areas, and loading indicators.
 
+#![allow(dead_code)]
+#![allow(mismatched_lifetime_syntaxes)]
+
 use ratatui::{
     buffer::Buffer,
     layout::Rect,

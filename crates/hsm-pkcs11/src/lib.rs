@@ -10,6 +10,8 @@
 //! algorithms including ML-KEM, ML-DSA, SLH-DSA, and hybrid combinations
 //! with classical algorithms.
 
+#![allow(clippy::not_unsafe_ptr_arg_deref)]
+
 use cryptoki_sys::{
     CK_ATTRIBUTE_PTR, CK_BYTE_PTR, CK_CHAR_PTR, CK_FLAGS, CK_INFO, CK_MECHANISM_PTR,
     CK_NOTIFICATION, CK_OBJECT_HANDLE, CK_OBJECT_HANDLE_PTR, CK_RV, CK_SESSION_HANDLE,
@@ -74,6 +76,7 @@ struct SlotInfo {
 }
 
 #[derive(Debug, Clone)]
+#[allow(dead_code)]
 struct SessionInfo {
     handle: CK_SESSION_HANDLE,
     slot_id: CK_SLOT_ID,
@@ -85,6 +88,7 @@ struct SessionInfo {
 }
 
 #[derive(Debug, Clone)]
+#[allow(dead_code)]
 struct ObjectInfo {
     handle: CK_OBJECT_HANDLE,
     session_handle: CK_SESSION_HANDLE,
@@ -99,6 +103,7 @@ struct SearchContext {
 }
 
 #[derive(Debug, Clone)]
+#[allow(dead_code)]
 enum ActiveOperation {
     Sign {
         mechanism_type: CK_ULONG,
@@ -192,6 +197,7 @@ fn translate_error(err: FrontendError) -> CK_RV {
 }
 
 #[unsafe(no_mangle)]
+#[allow(clippy::not_unsafe_ptr_arg_deref)]
 pub extern "C" fn C_Initialize(p_init_args: CK_VOID_PTR) -> CK_RV {
     match initialize(p_init_args) {
         Ok(()) => CKR_OK,
@@ -205,6 +211,7 @@ pub extern "C" fn C_Initialize(p_init_args: CK_VOID_PTR) -> CK_RV {
 }
 
 #[unsafe(no_mangle)]
+#[allow(clippy::not_unsafe_ptr_arg_deref)]
 pub extern "C" fn C_Finalize(_reserved: CK_VOID_PTR) -> CK_RV {
     match finalize() {
         Ok(()) => CKR_OK,
@@ -266,15 +273,17 @@ pub fn get_info() -> Result<CK_INFO, FrontendError> {
 }
 
 #[unsafe(no_mangle)]
-pub extern "C" fn C_GetInfo(pInfo: *mut CK_INFO) -> CK_RV {
-    if pInfo.is_null() {
+#[allow(clippy::not_unsafe_ptr_arg_deref)]
+#[allow(clippy::not_unsafe_ptr_arg_deref)]
+pub extern "C" fn C_GetInfo(p_info: *mut CK_INFO) -> CK_RV {
+    if p_info.is_null() {
         return CKR_ARGUMENTS_BAD;
     }
 
     match get_info() {
         Ok(info) => {
             unsafe {
-                *pInfo = info;
+                *p_info = info;
             }
             CKR_OK
         }
@@ -306,33 +315,34 @@ pub fn get_slot_list(_token_present: bool) -> Result<Vec<CK_SLOT_ID>, FrontendEr
 }
 
 #[unsafe(no_mangle)]
+#[allow(clippy::not_unsafe_ptr_arg_deref)]
 pub extern "C" fn C_GetSlotList(
     token_present: CK_ULONG,
-    pSlotList: CK_SLOT_ID_PTR,
-    pulCount: CK_ULONG_PTR,
+    p_slot_list: CK_SLOT_ID_PTR,
+    pul_count: CK_ULONG_PTR,
 ) -> CK_RV {
-    if pulCount.is_null() {
+    if pul_count.is_null() {
         return CKR_ARGUMENTS_BAD;
     }
 
     match get_slot_list(token_present != 0) {
         Ok(slot_ids) => {
             unsafe {
-                // If pSlotList is null, just return the count
-                if pSlotList.is_null() {
-                    *pulCount = slot_ids.len() as CK_ULONG;
+                // If p_slot_list is null, just return the count
+                if p_slot_list.is_null() {
+                    *pul_count = slot_ids.len() as CK_ULONG;
                     return CKR_OK;
                 }
 
                 // If the buffer is too small, return the required size
-                if *pulCount < slot_ids.len() as CK_ULONG {
-                    *pulCount = slot_ids.len() as CK_ULONG;
+                if *pul_count < slot_ids.len() as CK_ULONG {
+                    *pul_count = slot_ids.len() as CK_ULONG;
                     return CKR_BUFFER_TOO_SMALL;
                 }
 
                 // Copy the slot IDs to the provided buffer
-                std::ptr::copy_nonoverlapping(slot_ids.as_ptr(), pSlotList, slot_ids.len());
-                *pulCount = slot_ids.len() as CK_ULONG;
+                std::ptr::copy_nonoverlapping(slot_ids.as_ptr(), p_slot_list, slot_ids.len());
+                *pul_count = slot_ids.len() as CK_ULONG;
             }
             CKR_OK
         }
@@ -410,15 +420,16 @@ pub fn get_slot_info(slot_id: CK_SLOT_ID) -> Result<CK_SLOT_INFO, FrontendError>
 }
 
 #[unsafe(no_mangle)]
-pub extern "C" fn C_GetSlotInfo(slotID: CK_SLOT_ID, pInfo: *mut CK_SLOT_INFO) -> CK_RV {
-    if pInfo.is_null() {
+#[allow(clippy::not_unsafe_ptr_arg_deref)]
+pub extern "C" fn C_GetSlotInfo(slot_id: CK_SLOT_ID, p_info: *mut CK_SLOT_INFO) -> CK_RV {
+    if p_info.is_null() {
         return CKR_ARGUMENTS_BAD;
     }
 
-    match get_slot_info(slotID) {
+    match get_slot_info(slot_id) {
         Ok(info) => {
             unsafe {
-                *pInfo = info;
+                *p_info = info;
             }
             CKR_OK
         }
@@ -534,15 +545,16 @@ pub fn get_token_info(slot_id: CK_SLOT_ID) -> Result<CK_TOKEN_INFO, FrontendErro
 }
 
 #[unsafe(no_mangle)]
-pub extern "C" fn C_GetTokenInfo(slotID: CK_SLOT_ID, pInfo: *mut CK_TOKEN_INFO) -> CK_RV {
-    if pInfo.is_null() {
+#[allow(clippy::not_unsafe_ptr_arg_deref)]
+pub extern "C" fn C_GetTokenInfo(slot_id: CK_SLOT_ID, p_info: *mut CK_TOKEN_INFO) -> CK_RV {
+    if p_info.is_null() {
         return CKR_ARGUMENTS_BAD;
     }
 
-    match get_token_info(slotID) {
+    match get_token_info(slot_id) {
         Ok(info) => {
             unsafe {
-                *pInfo = info;
+                *p_info = info;
             }
             CKR_OK
         }
@@ -609,21 +621,22 @@ pub fn open_session(
 }
 
 #[unsafe(no_mangle)]
+#[allow(clippy::not_unsafe_ptr_arg_deref)]
 pub extern "C" fn C_OpenSession(
-    slotID: CK_SLOT_ID,
+    slot_id: CK_SLOT_ID,
     flags: CK_FLAGS,
-    _pApplication: CK_VOID_PTR,
-    _Notify: Option<extern "C" fn(CK_SESSION_HANDLE, CK_NOTIFICATION, CK_VOID_PTR) -> CK_RV>,
-    phSession: CK_SESSION_HANDLE_PTR,
+    _p_application: CK_VOID_PTR,
+    _notify: Option<extern "C" fn(CK_SESSION_HANDLE, CK_NOTIFICATION, CK_VOID_PTR) -> CK_RV>,
+    ph_session: CK_SESSION_HANDLE_PTR,
 ) -> CK_RV {
-    if phSession.is_null() {
+    if ph_session.is_null() {
         return CKR_ARGUMENTS_BAD;
     }
 
-    match open_session(slotID, flags) {
+    match open_session(slot_id, flags) {
         Ok(session_handle) => {
             unsafe {
-                *phSession = session_handle;
+                *ph_session = session_handle;
             }
             CKR_OK
         }
@@ -665,8 +678,9 @@ pub fn close_session(session_handle: CK_SESSION_HANDLE) -> Result<(), FrontendEr
 }
 
 #[unsafe(no_mangle)]
-pub extern "C" fn C_CloseSession(hSession: CK_SESSION_HANDLE) -> CK_RV {
-    match close_session(hSession) {
+#[allow(clippy::not_unsafe_ptr_arg_deref)]
+pub extern "C" fn C_CloseSession(h_session: CK_SESSION_HANDLE) -> CK_RV {
+    match close_session(h_session) {
         Ok(()) => CKR_OK,
         Err(FrontendError::NotInitialized) => CKR_CRYPTOKI_NOT_INITIALIZED,
         Err(err) => {
@@ -767,24 +781,25 @@ pub fn login(
 }
 
 #[unsafe(no_mangle)]
+#[allow(clippy::not_unsafe_ptr_arg_deref)]
 pub extern "C" fn C_Login(
-    hSession: CK_SESSION_HANDLE,
-    userType: CK_USER_TYPE,
-    pPin: CK_CHAR_PTR,
-    ulPinLen: CK_ULONG,
+    h_session: CK_SESSION_HANDLE,
+    user_type: CK_USER_TYPE,
+    p_pin: CK_CHAR_PTR,
+    ul_pin_len: CK_ULONG,
 ) -> CK_RV {
-    if pPin.is_null() && ulPinLen > 0 {
+    if p_pin.is_null() && ul_pin_len > 0 {
         return CKR_ARGUMENTS_BAD;
     }
 
     // Convert PIN to bytes
-    let pin_bytes = if ulPinLen == 0 {
+    let pin_bytes = if ul_pin_len == 0 {
         Vec::new()
     } else {
-        unsafe { std::slice::from_raw_parts(pPin, ulPinLen as usize).to_vec() }
+        unsafe { std::slice::from_raw_parts(p_pin, ul_pin_len as usize).to_vec() }
     };
 
-    match login(hSession, userType, &pin_bytes) {
+    match login(h_session, user_type, &pin_bytes) {
         Ok(()) => CKR_OK,
         Err(FrontendError::NotInitialized) => CKR_CRYPTOKI_NOT_INITIALIZED,
         Err(err) => {
@@ -886,12 +901,13 @@ pub fn sign_init(
 }
 
 #[unsafe(no_mangle)]
+#[allow(clippy::not_unsafe_ptr_arg_deref)]
 pub extern "C" fn C_SignInit(
-    hSession: CK_SESSION_HANDLE,
-    pMechanism: CK_MECHANISM_PTR,
-    hKey: CK_OBJECT_HANDLE,
+    h_session: CK_SESSION_HANDLE,
+    p_mechanism: CK_MECHANISM_PTR,
+    h_key: CK_OBJECT_HANDLE,
 ) -> CK_RV {
-    match sign_init(hSession, pMechanism, hKey) {
+    match sign_init(h_session, p_mechanism, h_key) {
         Ok(()) => CKR_OK,
         Err(FrontendError::NotInitialized) => CKR_CRYPTOKI_NOT_INITIALIZED,
         Err(err) => {
@@ -1055,12 +1071,13 @@ pub fn verify_init(
 }
 
 #[unsafe(no_mangle)]
+#[allow(clippy::not_unsafe_ptr_arg_deref)]
 pub extern "C" fn C_VerifyInit(
-    hSession: CK_SESSION_HANDLE,
-    pMechanism: CK_MECHANISM_PTR,
-    hKey: CK_OBJECT_HANDLE,
+    h_session: CK_SESSION_HANDLE,
+    p_mechanism: CK_MECHANISM_PTR,
+    h_key: CK_OBJECT_HANDLE,
 ) -> CK_RV {
-    match verify_init(hSession, pMechanism, hKey) {
+    match verify_init(h_session, p_mechanism, h_key) {
         Ok(()) => CKR_OK,
         Err(FrontendError::NotInitialized) => CKR_CRYPTOKI_NOT_INITIALIZED,
         Err(err) => {
@@ -1187,24 +1204,25 @@ fn lookup_key_material(
 }
 
 #[unsafe(no_mangle)]
+#[allow(clippy::not_unsafe_ptr_arg_deref)]
 pub extern "C" fn C_Verify(
-    hSession: CK_SESSION_HANDLE,
-    pData: CK_BYTE_PTR,
-    ulDataLen: CK_ULONG,
-    pSignature: CK_BYTE_PTR,
-    ulSignatureLen: CK_ULONG,
+    h_session: CK_SESSION_HANDLE,
+    p_data: CK_BYTE_PTR,
+    ul_data_len: CK_ULONG,
+    p_signature: CK_BYTE_PTR,
+    ul_signature_len: CK_ULONG,
 ) -> CK_RV {
-    if pData.is_null() || pSignature.is_null() {
+    if p_data.is_null() || p_signature.is_null() {
         return CKR_ARGUMENTS_BAD;
     }
 
     // Convert data and signature to bytes
-    let data_bytes = unsafe { std::slice::from_raw_parts(pData, ulDataLen as usize).to_vec() };
+    let data_bytes = unsafe { std::slice::from_raw_parts(p_data, ul_data_len as usize).to_vec() };
 
     let signature_bytes =
-        unsafe { std::slice::from_raw_parts(pSignature, ulSignatureLen as usize).to_vec() };
+        unsafe { std::slice::from_raw_parts(p_signature, ul_signature_len as usize).to_vec() };
 
-    match verify(hSession, &data_bytes, &signature_bytes) {
+    match verify(h_session, &data_bytes, &signature_bytes) {
         Ok(()) => CKR_OK,
         Err(FrontendError::NotInitialized) => CKR_CRYPTOKI_NOT_INITIALIZED,
         Err(err) => {
@@ -1217,21 +1235,22 @@ pub extern "C" fn C_Verify(
 }
 
 #[unsafe(no_mangle)]
+#[allow(clippy::not_unsafe_ptr_arg_deref)]
 pub extern "C" fn C_Sign(
-    hSession: CK_SESSION_HANDLE,
-    pData: CK_BYTE_PTR,
-    ulDataLen: CK_ULONG,
-    pSignature: CK_BYTE_PTR,
-    pulSignatureLen: CK_ULONG_PTR,
+    h_session: CK_SESSION_HANDLE,
+    p_data: CK_BYTE_PTR,
+    ul_data_len: CK_ULONG,
+    p_signature: CK_BYTE_PTR,
+    pul_signature_len: CK_ULONG_PTR,
 ) -> CK_RV {
-    if pData.is_null() || pulSignatureLen.is_null() {
+    if p_data.is_null() || pul_signature_len.is_null() {
         return CKR_ARGUMENTS_BAD;
     }
 
     // Convert data to bytes
-    let data_bytes = unsafe { std::slice::from_raw_parts(pData, ulDataLen as usize).to_vec() };
+    let data_bytes = unsafe { std::slice::from_raw_parts(p_data, ul_data_len as usize).to_vec() };
 
-    match sign(hSession, &data_bytes, pSignature, pulSignatureLen) {
+    match sign(h_session, &data_bytes, p_signature, pul_signature_len) {
         Ok(()) => CKR_OK,
         Err(FrontendError::NotInitialized) => CKR_CRYPTOKI_NOT_INITIALIZED,
         Err(err) => {
@@ -1357,22 +1376,23 @@ pub fn generate_key(
 }
 
 #[unsafe(no_mangle)]
+#[allow(clippy::not_unsafe_ptr_arg_deref)]
 pub extern "C" fn C_GenerateKey(
-    hSession: CK_SESSION_HANDLE,
-    pMechanism: CK_MECHANISM_PTR,
-    pTemplate: CK_ATTRIBUTE_PTR,
-    ulCount: CK_ULONG,
-    phKey: CK_OBJECT_HANDLE_PTR,
+    h_session: CK_SESSION_HANDLE,
+    p_mechanism: CK_MECHANISM_PTR,
+    p_template: CK_ATTRIBUTE_PTR,
+    ul_count: CK_ULONG,
+    ph_key: CK_OBJECT_HANDLE_PTR,
 ) -> CK_RV {
-    if phKey.is_null() {
+    if ph_key.is_null() {
         return CKR_ARGUMENTS_BAD;
     }
 
     let mut key_handle: CK_OBJECT_HANDLE = 0;
-    match generate_key(hSession, pMechanism, pTemplate, ulCount, &mut key_handle) {
+    match generate_key(h_session, p_mechanism, p_template, ul_count, &mut key_handle) {
         Ok(()) => {
             unsafe {
-                *phKey = key_handle;
+                *ph_key = key_handle;
             }
             CKR_OK
         }
@@ -1387,6 +1407,7 @@ pub extern "C" fn C_GenerateKey(
 }
 
 /// Generate a key pair
+#[allow(clippy::too_many_arguments)]
 pub fn generate_key_pair(
     session_handle: CK_SESSION_HANDLE,
     mechanism: CK_MECHANISM_PTR,
@@ -1739,12 +1760,13 @@ pub fn find_objects_init(
 }
 
 #[unsafe(no_mangle)]
+#[allow(clippy::not_unsafe_ptr_arg_deref)]
 pub extern "C" fn C_FindObjectsInit(
-    hSession: CK_SESSION_HANDLE,
-    pTemplate: CK_ATTRIBUTE_PTR,
-    ulCount: CK_ULONG,
+    h_session: CK_SESSION_HANDLE,
+    p_template: CK_ATTRIBUTE_PTR,
+    ul_count: CK_ULONG,
 ) -> CK_RV {
-    match find_objects_init(hSession, pTemplate, ulCount) {
+    match find_objects_init(h_session, p_template, ul_count) {
         Ok(()) => CKR_OK,
         Err(FrontendError::NotInitialized) => CKR_CRYPTOKI_NOT_INITIALIZED,
         Err(err) => {
@@ -1808,24 +1830,25 @@ pub fn find_objects(
 }
 
 #[unsafe(no_mangle)]
+#[allow(clippy::not_unsafe_ptr_arg_deref)]
 pub extern "C" fn C_FindObjects(
-    hSession: CK_SESSION_HANDLE,
-    phObject: CK_OBJECT_HANDLE_PTR,
-    ulMaxObjectCount: CK_ULONG,
-    pulObjectCount: CK_ULONG_PTR,
+    h_session: CK_SESSION_HANDLE,
+    ph_object: CK_OBJECT_HANDLE_PTR,
+    ul_max_object_count: CK_ULONG,
+    pul_object_count: CK_ULONG_PTR,
 ) -> CK_RV {
-    if phObject.is_null() || pulObjectCount.is_null() {
+    if ph_object.is_null() || pul_object_count.is_null() {
         return CKR_ARGUMENTS_BAD;
     }
 
     // Create a vector to hold the object handles
-    let mut object_handles = vec![0 as CK_OBJECT_HANDLE; ulMaxObjectCount as usize];
+    let mut object_handles = vec![0 as CK_OBJECT_HANDLE; ul_max_object_count as usize];
     let mut object_count: CK_ULONG = 0;
 
     match find_objects(
-        hSession,
+        h_session,
         &mut object_handles,
-        ulMaxObjectCount,
+        ul_max_object_count,
         &mut object_count,
     ) {
         Ok(()) => {
@@ -1833,10 +1856,10 @@ pub extern "C" fn C_FindObjects(
             unsafe {
                 std::ptr::copy_nonoverlapping(
                     object_handles.as_ptr(),
-                    phObject,
+                    ph_object,
                     object_count as usize,
                 );
-                *pulObjectCount = object_count;
+                *pul_object_count = object_count;
             }
             CKR_OK
         }
@@ -1880,8 +1903,9 @@ pub fn find_objects_final(session_handle: CK_SESSION_HANDLE) -> Result<(), Front
 }
 
 #[unsafe(no_mangle)]
-pub extern "C" fn C_FindObjectsFinal(hSession: CK_SESSION_HANDLE) -> CK_RV {
-    match find_objects_final(hSession) {
+#[allow(clippy::not_unsafe_ptr_arg_deref)]
+pub extern "C" fn C_FindObjectsFinal(h_session: CK_SESSION_HANDLE) -> CK_RV {
+    match find_objects_final(h_session) {
         Ok(()) => CKR_OK,
         Err(FrontendError::NotInitialized) => CKR_CRYPTOKI_NOT_INITIALIZED,
         Err(err) => {
@@ -1894,8 +1918,9 @@ pub extern "C" fn C_FindObjectsFinal(hSession: CK_SESSION_HANDLE) -> CK_RV {
 }
 
 #[unsafe(no_mangle)]
-pub extern "C" fn C_DestroyObject(hSession: CK_SESSION_HANDLE, hObject: CK_OBJECT_HANDLE) -> CK_RV {
-    match destroy_object(hSession, hObject) {
+#[allow(clippy::not_unsafe_ptr_arg_deref)]
+pub extern "C" fn C_DestroyObject(h_session: CK_SESSION_HANDLE, h_object: CK_OBJECT_HANDLE) -> CK_RV {
+    match destroy_object(h_session, h_object) {
         Ok(()) => CKR_OK,
         Err(FrontendError::NotInitialized) => CKR_CRYPTOKI_NOT_INITIALIZED,
         Err(err) => {
@@ -1908,36 +1933,37 @@ pub extern "C" fn C_DestroyObject(hSession: CK_SESSION_HANDLE, hObject: CK_OBJEC
 }
 
 #[unsafe(no_mangle)]
+#[allow(clippy::not_unsafe_ptr_arg_deref)]
 pub extern "C" fn C_GenerateKeyPair(
-    hSession: CK_SESSION_HANDLE,
-    pMechanism: CK_MECHANISM_PTR,
-    pPublicKeyTemplate: CK_ATTRIBUTE_PTR,
-    ulPublicKeyAttributeCount: CK_ULONG,
-    pPrivateKeyTemplate: CK_ATTRIBUTE_PTR,
-    ulPrivateKeyAttributeCount: CK_ULONG,
-    phPublicKey: CK_OBJECT_HANDLE_PTR,
-    phPrivateKey: CK_OBJECT_HANDLE_PTR,
+    h_session: CK_SESSION_HANDLE,
+    p_mechanism: CK_MECHANISM_PTR,
+    p_public_key_template: CK_ATTRIBUTE_PTR,
+    ul_public_key_attribute_count: CK_ULONG,
+    p_private_key_template: CK_ATTRIBUTE_PTR,
+    ul_private_key_attribute_count: CK_ULONG,
+    ph_public_key: CK_OBJECT_HANDLE_PTR,
+    ph_private_key: CK_OBJECT_HANDLE_PTR,
 ) -> CK_RV {
-    if phPublicKey.is_null() || phPrivateKey.is_null() {
+    if ph_public_key.is_null() || ph_private_key.is_null() {
         return CKR_ARGUMENTS_BAD;
     }
 
     let mut public_key_handle: CK_OBJECT_HANDLE = 0;
     let mut private_key_handle: CK_OBJECT_HANDLE = 0;
     match generate_key_pair(
-        hSession,
-        pMechanism,
-        pPublicKeyTemplate,
-        ulPublicKeyAttributeCount,
-        pPrivateKeyTemplate,
-        ulPrivateKeyAttributeCount,
+        h_session,
+        p_mechanism,
+        p_public_key_template,
+        ul_public_key_attribute_count,
+        p_private_key_template,
+        ul_private_key_attribute_count,
         &mut public_key_handle,
         &mut private_key_handle,
     ) {
         Ok(()) => {
             unsafe {
-                *phPublicKey = public_key_handle;
-                *phPrivateKey = private_key_handle;
+                *ph_public_key = public_key_handle;
+                *ph_private_key = private_key_handle;
             }
             CKR_OK
         }
@@ -1952,8 +1978,9 @@ pub extern "C" fn C_GenerateKeyPair(
 }
 
 #[unsafe(no_mangle)]
-pub extern "C" fn C_Logout(hSession: CK_SESSION_HANDLE) -> CK_RV {
-    match logout(hSession) {
+#[allow(clippy::not_unsafe_ptr_arg_deref)]
+pub extern "C" fn C_Logout(h_session: CK_SESSION_HANDLE) -> CK_RV {
+    match logout(h_session) {
         Ok(()) => CKR_OK,
         Err(FrontendError::NotInitialized) => CKR_CRYPTOKI_NOT_INITIALIZED,
         Err(err) => {
@@ -1966,8 +1993,9 @@ pub extern "C" fn C_Logout(hSession: CK_SESSION_HANDLE) -> CK_RV {
 }
 
 #[unsafe(no_mangle)]
-pub extern "C" fn C_CloseAllSessions(slotID: CK_SLOT_ID) -> CK_RV {
-    match close_all_sessions(slotID) {
+#[allow(clippy::not_unsafe_ptr_arg_deref)]
+pub extern "C" fn C_CloseAllSessions(slot_id: CK_SLOT_ID) -> CK_RV {
+    match close_all_sessions(slot_id) {
         Ok(()) => CKR_OK,
         Err(FrontendError::NotInitialized) => CKR_CRYPTOKI_NOT_INITIALIZED,
         Err(err) => {

@@ -2,6 +2,8 @@
 //!
 //! Provides event processing with crokey key binding support.
 
+#![allow(dead_code)]
+
 use crate::ui::input::{KeyAction, KeyBindings};
 use anyhow::Result;
 use crokey::{crossterm::event::{self, Event, KeyEvent}, KeyCombination};
@@ -83,10 +85,9 @@ impl EventLoop {
         loop {
             match event::read()? {
                 Event::Key(key_event) => {
-                    if let Some(action) = self.handler.handle_key_event(key_event) {
-                        if !callback(action)? {
-                            break;
-                        }
+                    if let Some(action) = self.handler.handle_key_event(key_event)
+                        && !callback(action)? {
+                        break;
                     }
                 }
                 Event::Resize(_, _) => {

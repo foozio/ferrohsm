@@ -2,6 +2,8 @@
 //!
 //! Provides common UI patterns like headers, footers, menus, and forms.
 
+#![allow(dead_code)]
+
 use crate::ui::style::Theme;
 use crate::ui::widgets::{ErrorDialog, LoadingSpinner, StatusIndicator, SuccessDialog};
 use ratatui::{
@@ -201,6 +203,7 @@ impl StatusBar {
 }
 
 /// Modal dialog base component
+#[allow(clippy::type_complexity)]
 pub struct Modal {
     title: String,
     content: Box<dyn Fn(&mut Frame, Rect)>,

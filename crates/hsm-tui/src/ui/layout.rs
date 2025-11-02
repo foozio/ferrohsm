@@ -2,6 +2,8 @@
 //!
 //! Provides reusable layout patterns and constraints.
 
+#![allow(dead_code)]
+
 use ratatui::layout::{Constraint, Direction, Layout, Rect};
 
 /// Standard application layout with header, content, and footer
@@ -43,6 +45,7 @@ pub fn three_column_layout(area: Rect) -> Vec<Rect> {
 }
 
 /// Centered content layout with margins
+#[allow(clippy::unnecessary_operation)]
 pub fn centered_layout(area: Rect, width: u16, height: u16) -> Rect {
     let horizontal_margin = (area.width.saturating_sub(width)) / 2;
     let vertical_margin = (area.height.saturating_sub(height)) / 2;
@@ -56,16 +59,14 @@ pub fn centered_layout(area: Rect, width: u16, height: u16) -> Rect {
         ])
         .split(area)[1];
 
-    let centered = Layout::default()
+    Layout::default()
         .direction(Direction::Horizontal)
         .constraints([
             Constraint::Length(horizontal_margin),
             Constraint::Length(width),
             Constraint::Min(0),
         ])
-        .split(area)[1];
-
-    centered
+        .split(area)[1]
 }
 
 /// Dialog layout with title area and content

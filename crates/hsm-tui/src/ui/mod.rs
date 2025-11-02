@@ -3,6 +3,8 @@
 //! This module provides a modular UI architecture inspired by ATAC,
 //! with separate concerns for components, input handling, layout, styling, and widgets.
 
+#![allow(unused_imports)]
+
 pub mod components;
 pub mod input;
 pub mod layout;
