@@ -1,7 +1,15 @@
 # FerroHSM Product Requirements Document (PRD)
 
 ## 1. Overview
-FerroHSM is a software hardware security module that offers secure key lifecycle management, cryptographic operations, and auditable governance for cloud-native workloads. The platform exposes a REST API, CLI, and embedded web console, backed by a Rust core that handles key generation, sealing, authorization, and audit logging. This PRD captures the business objectives, user needs, and functional scope for the MVP release (v0.1).
+FerroHSM is a software hardware security module that offers secure key lifecycle management, cryptographic operations, and auditable governance for cloud-native workloads. The platform exposes REST API, CLI, TUI, PKCS#11 interface, and embedded web console, backed by a Rust core that handles key generation, sealing, authorization, and audit logging. This PRD captures the business objectives, user needs, and functional scope, updated to reflect v0.3.0 achievements.
+
+## 1.5 Current Status (v0.3.0)
+FerroHSM v0.3.0 has been successfully released with the following key features:
+- **PKCS#11 Interface**: Full v2.40 compliant interface for legacy application compatibility
+- **Enhanced TUI**: Complete text-based user interface with menu navigation and full CLI parity
+- **Homebrew Distribution**: Easy installation for macOS and Linux
+- **Post-Quantum Cryptography**: Support for ML-KEM, ML-DSA, SLH-DSA with hybrid cryptography
+- **Comprehensive Documentation**: API references, user guides, and integration examples
 
 ## 2. Goals & Non-Goals
 ### Goals
@@ -14,7 +22,6 @@ FerroHSM is a software hardware security module that offers secure key lifecycle
 ### Non-Goals
 - FIPS certification, hardware-backed key sealing, or threshold cryptography.
 - High availability clustering or cross-region replication.
-- PKCS#11 compatibility (out of scope for MVP).
 - Multi-tenant isolation and billing features.
 
 ## 3. Personas & User Journeys
@@ -61,7 +68,9 @@ FerroHSM is a software hardware security module that offers secure key lifecycle
 5. **Interfaces**
    - REST API via Axum with TLS and optional mutual TLS.
    - CLI using Reqwest with mutual TLS and table-rendered outputs.
-   - Web UI dashboard listing keys.
+   - TUI (Text User Interface) with menu-based navigation and full feature access.
+   - PKCS#11 shared library for legacy application integration.
+   - Web UI dashboard listing keys, approvals, and audit logs.
    - Example SDKs (Go, Python) demonstrating authenticated usage.
    - Runtime-selectable TLS provisioning: manual PEMs with hot reload/OCSP stapling or automated ACME issuance/renewal with cache-backed key retention.
 6. **Storage Backends**

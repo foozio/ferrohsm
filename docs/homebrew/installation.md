@@ -1,14 +1,24 @@
 # Homebrew Installation
 
-FerroHSM is now available on Homebrew for macOS users.
+FerroHSM is now available on Homebrew for both macOS and Linux users.
 
 ## Installing via Homebrew
 
-To install FerroHSM using Homebrew:
+### macOS
+
+To install FerroHSM on macOS using Homebrew:
 
 ```bash
 brew tap foozio/ferrohsm
 brew install ferrohsm
+```
+
+### Linux
+
+To install FerroHSM on Linux using Homebrew:
+
+```bash
+brew install ./dist/homebrew-linux/ferrohsm.rb
 ```
 
 This will install the `ferrohsm` CLI tool, which can be used to interact with the FerroHSM server.

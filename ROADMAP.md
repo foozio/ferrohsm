@@ -1,5 +1,11 @@
 # FerroHSM Roadmap
 
+## Recent Achievements (v0.3.0)
+- ✅ **PKCS#11 Interface**: Full PKCS#11 v2.40 compliant interface for legacy application compatibility
+- ✅ **Enhanced TUI**: Complete text-based user interface with menu-based navigation and full CLI feature parity
+- ✅ **Homebrew Distribution**: One-command installation for macOS and Linux users
+- ✅ **Post-Quantum Cryptography**: Continued support for NIST-standardized PQC algorithms with hybrid cryptography
+
 ## 0. Guiding Principles
 - **Security First:** Every milestone must improve or preserve cryptographic assurances, access controls, and auditability.
 - **Operational Readiness:** Emphasize observability, automation, and predictable upgrades.
@@ -45,20 +51,20 @@
    - Add health probes and self-check endpoints (crypto self-tests, storage integrity).
 
 ### Deliverables
-- `v0.3` release certified for clustered deployments with documented scale test results.
+- `v0.4` release certified for clustered deployments with documented scale test results.
 - Operations dashboard (Grafana) and alerting rules templates.
 
 ## 3. 2027 — Ecosystem Expansion & Compliance
 ### Objectives
-- Broaden integration surface (SDKs, PKCS#11) and align with compliance standards.
+- Broaden integration surface (additional SDKs, hardware integration) and align with compliance standards.
 
 ### Major Initiatives
 1. **API & SDK Enhancements**
    - GA Go/Python SDKs with auto-refresh tokens and circuit breaker patterns.
    - Add Java/.NET SDKs and Terraform provider for key management automation.
    - Publish OpenAPI spec with conformance tests.
-2. **PKCS#11 Compatibility Layer**
-   - Implement PKCS#11 shim backed by `hsm-core`, enabling legacy clients.
+2. **Hardware HSM Integration**
+   - Implement hardware security module support for commercial HSMs.
    - Run interoperability tests with major vendor suites (SafeNet, Thales).
 3. **Compliance Readiness**
    - Map controls to SOC 2/FIPS 140-3 readiness checklist.
@@ -66,7 +72,7 @@
    - Engage external assessment for cryptographic module validation planning.
 
 ### Deliverables
-- `v1.0` release featuring PKCS#11 support, multi-language SDKs, and compliance documentation pack.
+- `v1.0` release featuring hardware HSM support, multi-language SDKs, and compliance documentation pack.
 
 ## 4. Future Horizons (Post-2027)
 - **Threshold Cryptography:** Integrate MPC-based signing or Shamir key shards to remove single custodians.

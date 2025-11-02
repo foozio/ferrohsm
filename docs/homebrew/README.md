@@ -1,6 +1,6 @@
 # Publishing FerroHSM on Homebrew
 
-This document explains how to publish FerroHSM on Homebrew for macOS users.
+This document explains how to publish FerroHSM on Homebrew for macOS and Linux users.
 
 ## Prerequisites
 
@@ -15,12 +15,16 @@ Creating your own tap is the quickest way to distribute FerroHSM without waiting
 ### Steps:
 
 1. Create a new GitHub repository named `homebrew-ferrohsm`
-2. Copy the `ferrohsm.rb` formula file to the root of this repository
-3. Commit and push the file to GitHub
+2. Copy the `ferrohsm.rb` formula files (for both macOS and Linux) to the root of this repository
+3. Commit and push the files to GitHub
 4. Users can now install FerroHSM with:
    ```bash
+   # macOS
    brew tap foozio/ferrohsm
    brew install ferrohsm
+   
+   # Linux
+   brew install ./dist/homebrew-linux/ferrohsm.rb
    ```
 
 ## Option 2: Submit to Homebrew Core

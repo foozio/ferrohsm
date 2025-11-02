@@ -39,9 +39,11 @@
 ```
 
 ### Crate Overview
-- **`hsm-core`**: implements key lifecycle management, PKCS#11-aligned attribute storage (`AttributeSet`) with per-backend indexes, algorithm providers (AES-256-GCM, RSA-2048/4096, P-256/P-384), authorization policies, tamper-evident storage (HMAC over sealed blobs), audit logging, and extensibility hooks.
-- **`hsm-server`**: exposes REST (and future PKCS#11) endpoints via Axum, performs TLS 1.3 termination with the `rustls` ring provider (manual PEM reloads with automatic OCSP retrieval/stapling or automated ACME lifecycle via `rustls-acme`), validates JWT bearer tokens using reloadable keysets (HS256/RS256/ES256), applies per-actor rate limiting, persists dual-control approvals, hosts the web UI (Tera templated dashboard with approvals queue, audit tail, and metrics cards), and orchestrates policy enforcement. When built with the `pqc` feature it also wires dedicated routes for PQC key creation, hybrid workflows, and ML-KEM encapsulation/decapsulation so post-quantum operations receive the same policy, audit, and approval guarantees as classical algorithms.
+- **`hsm-core`**: implements key lifecycle management, PKCS#11-aligned attribute storage (`AttributeSet`) with per-backend indexes, algorithm providers (AES-256-GCM, RSA-2048/4096, P-256/P-384, post-quantum algorithms), authorization policies, tamper-evident storage (HMAC over sealed blobs), audit logging, and extensibility hooks.
+- **`hsm-server`**: exposes REST endpoints via Axum, performs TLS 1.3 termination with the `rustls` ring provider (manual PEM reloads with automatic OCSP retrieval/stapling or automated ACME lifecycle via `rustls-acme`), validates JWT bearer tokens using reloadable keysets (HS256/RS256/ES256), applies per-actor rate limiting, persists dual-control approvals, hosts the web UI (Tera templated dashboard with approvals queue, audit tail, and metrics cards), and orchestrates policy enforcement. When built with the `pqc` feature it also wires dedicated routes for PQC key creation, hybrid workflows, and ML-KEM encapsulation/decapsulation so post-quantum operations receive the same policy, audit, and approval guarantees as classical algorithms.
 - **`hsm-cli`**: secure administrative CLI that authenticates using mutual TLS and/or short-lived JWTs it can mint locally, supporting workflows (initialize, rotate, approve, audit).
+- **`hsm-pkcs11`**: implements the PKCS#11 v2.40 standard interface as a C-compatible shared library, providing session management, object handling, cryptographic operations, and key management for legacy application compatibility.
+- **`hsm-tui`**: text-based user interface built with Ratatui, offering menu-driven navigation for key management, cryptographic operations, audit viewing, approval workflows, and settings configuration.
 - **`web/static`**: static assets for the embedded management UI (progressive enhancement, CSP enforced via headers).
 
 ## Trust Boundaries & Isolation Layers
@@ -76,7 +78,8 @@
 
 ## Integration Interfaces
 - **REST API:** JSON-based endpoints following RESTful naming (`/api/v1/keys`, `/api/v1/keys/:id/rotate`, `/api/v1/keys/:id/versions`, `/api/v1/keys/:id/rollback`). Listing endpoints support pagination (`page`, `per_page`), filtering (`algorithm`, `state`, `tags`), and are backed by a TTL-bound, LRU-capped cache per actor (2048 unique queries) to keep memory usage predictable. Requires Bearer JWT tokens backed by reloadable keysets, is rate limited per client identity, persists dual-control approvals via `/api/v1/approvals`, and exposes explicit `POST /api/v1/approvals/:id/{approve|deny}` actions; responses are validated with Serde.
-- **PKCS#11 (future):** Adapter trait defined in `hsm-core::pkcs11` enabling drop-in module once compliance testing is complete.
+- **PKCS#11:** C-compatible shared library (`libhsm_pkcs11.so`/`libhsm_pkcs11.dylib`) implementing PKCS#11 v2.40 standard for legacy application integration, supporting session management, object operations, cryptographic functions, and key management with full attribute mapping.
+- **TUI:** Interactive terminal interface for direct HSM management without network dependencies, featuring menu-based navigation, key operations, audit inspection, and approval handling.
 - **SDK Examples:** Provided for Go and Python showing TLS-authenticated REST usage, error handling, and audit correlation IDs.
 
 ## Operational Controls & Deployment
@@ -108,5 +111,6 @@
 ## Future Work
 - FIPS 140-3 certification alignment (formal self-test harness, entropy source validation).
 - Hardware-rooted key sealing with TPM or AWS Nitro Enclaves.
-- Full PKCS#11 compliance, CKA/CKO attribute mapping, and C API.
+- Web UI: Browser-based management interface with real-time dashboards.
 - Support for threshold cryptography (Shamir, MPC) to reduce single point of failure.
+- Hardware HSM integration for commercial security modules.
