@@ -10,7 +10,7 @@ use cryptoki_sys::{
     CKA_TOKEN, CKA_UNWRAP, CKA_VALUE_LEN, CKA_VERIFY, CKA_WRAP, CKK_AES, CKK_EC, CKK_RSA,
     CKO_PRIVATE_KEY, CKO_SECRET_KEY,
 };
-use hsm_core::models::{KeyAlgorithm, KeyMaterial, KeyMaterialType, KeyMetadata};
+use hsm_core::models::{KeyAlgorithm, KeyMaterial, KeyMaterialType, KeyMetadata, KeyPurpose};
 
 #[cfg(feature = "pqc")]
 use hsm_core::pqc::{MlDsaSecurityLevel, MlKemSecurityLevel, SlhDsaSecurityLevel};
@@ -335,5 +335,183 @@ fn key_algorithm_to_ulong(algorithm: KeyAlgorithm) -> CK_ULONG {
         KeyAlgorithm::HybridP256MlDsa44 => 50 + 44,
         KeyAlgorithm::HybridP256MlDsa65 => 50 + 65,
         KeyAlgorithm::HybridP384MlDsa87 => 50 + 87,
+    }
+}
+
+/// Get the value of a specific attribute for a key
+pub fn get_attribute_value(metadata: &KeyMetadata, attribute_type: CK_ATTRIBUTE_TYPE) -> Option<Vec<u8>> {
+    match attribute_type {
+        CKA_CLASS => {
+            // Determine object class based on algorithm
+            let class = match metadata.algorithm {
+                KeyAlgorithm::Aes256Gcm => CKO_SECRET_KEY,
+                KeyAlgorithm::Rsa2048 | KeyAlgorithm::Rsa4096 => CKO_PRIVATE_KEY, // For private keys
+                KeyAlgorithm::P256 | KeyAlgorithm::P384 => CKO_PRIVATE_KEY, // For private keys
+                #[cfg(feature = "pqc")]
+                KeyAlgorithm::MlKem512 | KeyAlgorithm::MlKem768 | KeyAlgorithm::MlKem1024 => CKO_PRIVATE_KEY,
+                #[cfg(feature = "pqc")]
+                KeyAlgorithm::MlDsa44 | KeyAlgorithm::MlDsa65 | KeyAlgorithm::MlDsa87 => CKO_PRIVATE_KEY,
+                #[cfg(feature = "pqc")]
+                KeyAlgorithm::SlhDsa128f | KeyAlgorithm::SlhDsa128s | KeyAlgorithm::SlhDsa192f
+                | KeyAlgorithm::SlhDsa192s | KeyAlgorithm::SlhDsa256f | KeyAlgorithm::SlhDsa256s => CKO_PRIVATE_KEY,
+                #[cfg(feature = "pqc")]
+                KeyAlgorithm::HybridP256MlKem512 | KeyAlgorithm::HybridP256MlKem768 | KeyAlgorithm::HybridP384MlKem1024
+                | KeyAlgorithm::HybridP256MlDsa44 | KeyAlgorithm::HybridP256MlDsa65 | KeyAlgorithm::HybridP384MlDsa87 => CKO_PRIVATE_KEY,
+            };
+            Some((class as CK_ULONG).to_be_bytes().to_vec())
+        }
+        CKA_KEY_TYPE => {
+            let key_type = algorithm_to_key_type(metadata.algorithm);
+            Some((key_type as CK_ULONG).to_be_bytes().to_vec())
+        }
+        CKA_ID => {
+            // Use the key ID as the CKA_ID
+            Some(metadata.id.as_bytes().to_vec())
+        }
+        CKA_TOKEN => {
+            // Keys are token objects (not session objects)
+            Some(1u8.to_be_bytes().to_vec())
+        }
+        CKA_PRIVATE => {
+            // Private keys are private objects
+            Some(1u8.to_be_bytes().to_vec())
+        }
+        CKA_MODIFIABLE => {
+            // Keys are not modifiable
+            Some(0u8.to_be_bytes().to_vec())
+        }
+        CKA_ENCRYPT => {
+            // Check if the key can be used for encryption
+            let can_encrypt = metadata.usage.contains(&KeyPurpose::Encrypt);
+            Some((can_encrypt as u8).to_be_bytes().to_vec())
+        }
+        CKA_DECRYPT => {
+            // Check if the key can be used for decryption
+            let can_decrypt = metadata.usage.contains(&KeyPurpose::Decrypt);
+            Some((can_decrypt as u8).to_be_bytes().to_vec())
+        }
+        CKA_SIGN => {
+            // Check if the key can be used for signing
+            let can_sign = metadata.usage.contains(&KeyPurpose::Sign);
+            Some((can_sign as u8).to_be_bytes().to_vec())
+        }
+        CKA_VERIFY => {
+            // Check if the key can be used for verification
+            let can_verify = metadata.usage.contains(&KeyPurpose::Verify);
+            Some((can_verify as u8).to_be_bytes().to_vec())
+        }
+        CKA_WRAP => {
+            // Check if the key can be used for wrapping
+            let can_wrap = metadata.usage.contains(&KeyPurpose::Wrap);
+            Some((can_wrap as u8).to_be_bytes().to_vec())
+        }
+        CKA_UNWRAP => {
+            // Check if the key can be used for unwrapping
+            let can_unwrap = metadata.usage.contains(&KeyPurpose::Unwrap);
+            Some((can_unwrap as u8).to_be_bytes().to_vec())
+        }
+        CKA_SENSITIVE => {
+            // All keys are sensitive
+            Some(1u8.to_be_bytes().to_vec())
+        }
+        CKA_EXTRACTABLE => {
+            // Keys are not extractable
+            Some(0u8.to_be_bytes().to_vec())
+        }
+        CKA_VALUE_LEN => {
+            // For symmetric keys, return the key length in bits
+            match metadata.algorithm {
+                KeyAlgorithm::Aes256Gcm => Some(256u32.to_be_bytes().to_vec()),
+                _ => None,
+            }
+        }
+        // Post-quantum specific attributes
+        #[cfg(feature = "pqc")]
+        CKA_ML_KEM_SECURITY_LEVEL => {
+            if let Some(level) = algorithm_to_ml_kem_security_level(metadata.algorithm) {
+                Some(ml_kem_security_level_to_ulong(level).to_be_bytes().to_vec())
+            } else {
+                None
+            }
+        }
+        #[cfg(feature = "pqc")]
+        CKA_ML_DSA_SECURITY_LEVEL => {
+            if let Some(level) = algorithm_to_ml_dsa_security_level(metadata.algorithm) {
+                Some(ml_dsa_security_level_to_ulong(level).to_be_bytes().to_vec())
+            } else {
+                None
+            }
+        }
+        #[cfg(feature = "pqc")]
+        CKA_SLH_DSA_SECURITY_LEVEL => {
+            if let Some(level) = algorithm_to_slh_dsa_security_level(metadata.algorithm) {
+                Some(slh_dsa_security_level_to_ulong(level).to_be_bytes().to_vec())
+            } else {
+                None
+            }
+        }
+        _ => None, // Attribute not supported
+    }
+}
+
+/// Convert KeyAlgorithm to PKCS#11 key type
+fn algorithm_to_key_type(algorithm: KeyAlgorithm) -> CK_ULONG {
+    match algorithm {
+        KeyAlgorithm::Aes256Gcm => CKK_AES,
+        KeyAlgorithm::Rsa2048 | KeyAlgorithm::Rsa4096 => CKK_RSA,
+        KeyAlgorithm::P256 | KeyAlgorithm::P384 => CKK_EC,
+        #[cfg(feature = "pqc")]
+        KeyAlgorithm::MlKem512 | KeyAlgorithm::MlKem768 | KeyAlgorithm::MlKem1024 => CKK_ML_KEM,
+        #[cfg(feature = "pqc")]
+        KeyAlgorithm::MlDsa44 | KeyAlgorithm::MlDsa65 | KeyAlgorithm::MlDsa87 => CKK_ML_DSA,
+        #[cfg(feature = "pqc")]
+        KeyAlgorithm::SlhDsa128f | KeyAlgorithm::SlhDsa128s | KeyAlgorithm::SlhDsa192f
+        | KeyAlgorithm::SlhDsa192s | KeyAlgorithm::SlhDsa256f | KeyAlgorithm::SlhDsa256s => CKK_SLH_DSA,
+        #[cfg(feature = "pqc")]
+        KeyAlgorithm::HybridP256MlKem512 | KeyAlgorithm::HybridP256MlKem768 | KeyAlgorithm::HybridP384MlKem1024 => CKK_HYBRID_ECDH_ML_KEM,
+        #[cfg(feature = "pqc")]
+        KeyAlgorithm::HybridP256MlDsa44 | KeyAlgorithm::HybridP256MlDsa65 | KeyAlgorithm::HybridP384MlDsa87 => CKK_HYBRID_ECDSA_ML_DSA,
+    }
+}
+
+/// Convert KeyAlgorithm to ML-KEM security level
+#[cfg(feature = "pqc")]
+fn algorithm_to_ml_kem_security_level(algorithm: KeyAlgorithm) -> Option<MlKemSecurityLevel> {
+    match algorithm {
+        KeyAlgorithm::MlKem512 => Some(MlKemSecurityLevel::MlKem512),
+        KeyAlgorithm::MlKem768 => Some(MlKemSecurityLevel::MlKem768),
+        KeyAlgorithm::MlKem1024 => Some(MlKemSecurityLevel::MlKem1024),
+        KeyAlgorithm::HybridP256MlKem512 => Some(MlKemSecurityLevel::MlKem512),
+        KeyAlgorithm::HybridP256MlKem768 => Some(MlKemSecurityLevel::MlKem768),
+        KeyAlgorithm::HybridP384MlKem1024 => Some(MlKemSecurityLevel::MlKem1024),
+        _ => None,
+    }
+}
+
+/// Convert KeyAlgorithm to ML-DSA security level
+#[cfg(feature = "pqc")]
+fn algorithm_to_ml_dsa_security_level(algorithm: KeyAlgorithm) -> Option<MlDsaSecurityLevel> {
+    match algorithm {
+        KeyAlgorithm::MlDsa44 => Some(MlDsaSecurityLevel::MlDsa44),
+        KeyAlgorithm::MlDsa65 => Some(MlDsaSecurityLevel::MlDsa65),
+        KeyAlgorithm::MlDsa87 => Some(MlDsaSecurityLevel::MlDsa87),
+        KeyAlgorithm::HybridP256MlDsa44 => Some(MlDsaSecurityLevel::MlDsa44),
+        KeyAlgorithm::HybridP256MlDsa65 => Some(MlDsaSecurityLevel::MlDsa65),
+        KeyAlgorithm::HybridP384MlDsa87 => Some(MlDsaSecurityLevel::MlDsa87),
+        _ => None,
+    }
+}
+
+/// Convert KeyAlgorithm to SLH-DSA security level
+#[cfg(feature = "pqc")]
+fn algorithm_to_slh_dsa_security_level(algorithm: KeyAlgorithm) -> Option<SlhDsaSecurityLevel> {
+    match algorithm {
+        KeyAlgorithm::SlhDsa128f => Some(SlhDsaSecurityLevel::SlhDsaSha2128f),
+        KeyAlgorithm::SlhDsa128s => Some(SlhDsaSecurityLevel::SlhDsaSha2128s),
+        KeyAlgorithm::SlhDsa192f => Some(SlhDsaSecurityLevel::SlhDsaSha2192f),
+        KeyAlgorithm::SlhDsa192s => Some(SlhDsaSecurityLevel::SlhDsaSha2192s),
+        KeyAlgorithm::SlhDsa256f => Some(SlhDsaSecurityLevel::SlhDsaSha2256f),
+        KeyAlgorithm::SlhDsa256s => Some(SlhDsaSecurityLevel::SlhDsaSha2256s),
+        _ => None,
     }
 }

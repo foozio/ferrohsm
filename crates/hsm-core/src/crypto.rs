@@ -17,8 +17,8 @@ use ml_dsa::{
     MlDsa44, MlDsa65, MlDsa87,
     signature::{SignatureEncoding, Signer, Verifier},
 };
-use p256::ecdsa::SigningKey as P256SigningKey;
-use p384::ecdsa::SigningKey as P384SigningKey;
+use p256::ecdsa::{SigningKey as P256SigningKey, VerifyingKey as P256VerifyingKey};
+use p384::ecdsa::{SigningKey as P384SigningKey, VerifyingKey as P384VerifyingKey};
 use pkcs8::spki::SubjectPublicKeyInfo;
 use pkcs8::{
     DecodePublicKey, EncodePrivateKey, EncodePublicKey, LineEnding, PrivateKeyInfo,
