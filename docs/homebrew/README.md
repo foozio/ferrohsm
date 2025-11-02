@@ -48,7 +48,7 @@ When releasing a new version of FerroHSM:
 
 1. Run `scripts/package_homebrew.sh` with the new version number:
    ```bash
-   ./scripts/package_homebrew.sh 0.3.0
+    ./scripts/package_homebrew.sh 0.4.0
    ```
    
 2. Upload the generated tarball to GitHub Releases

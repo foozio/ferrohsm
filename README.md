@@ -2,12 +2,13 @@
 
 FerroHSM is a software-based Hardware Security Module implemented in Rust with Secure by Design principles. It offers cryptographic key management, tamper-evident storage, role-based access control, and multiple interfaces for integration with modern platforms.
 
-## What's New in v0.3.0
+## What's New in v0.4.0
 
-- **PKCS#11 Interface**: Full PKCS#11 v2.40 compliant interface for legacy application compatibility
-- **Enhanced TUI**: Advanced text-based user interface with ATAC-inspired modular architecture, syntax highlighting, customizable themes, and comprehensive interactive management
-- **Homebrew Distribution**: One-command installation for macOS and Linux users
-- **Comprehensive Documentation**: Complete API reference and user guides
+- **Audit Log Integrity Enhancements**: Hash-chain anchoring to external stores, periodic checkpoint verification, and automated signing key rotation for tamper-evident audit trails
+- **PKCS#11 Completion**: Session/token management, cryptographic mechanisms, and comprehensive error mapping for full PKCS#11 v2.40 compliance
+- **Security Hardening**: JWT authentication improvements with cloud KMS integration, asymmetric verification, and JWKS endpoints
+- **Storage Backend Fixes**: SQLite backend fixes and migration tooling between storage backends
+- **Error Handling Improvements**: Expanded REST API error taxonomy with comprehensive logging and graceful degradation
 
 ## Crate Overview
 
