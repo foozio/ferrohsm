@@ -125,7 +125,7 @@ The FerroHSM TUI implementation is now complete and provides a full-featured, us
 3. ✅ Full form inputs for key creation and cryptographic operations
 4. ✅ Robust connection management and authentication
 5. ✅ Comprehensive error handling and user feedback
-6. ✅ Unit and integration tests for all components
+6. ✅ Unit, integration, and end-to-end tests for all components
 7. ✅ Polished UI with excellent user experience
 
 The TUI now serves as a primary interface for FerroHSM operations, offering an intuitive alternative to the CLI while maintaining full feature parity.

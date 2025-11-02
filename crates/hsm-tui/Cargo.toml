@@ -29,3 +29,4 @@ toml = { workspace = true }
 assert_cmd = "2.1.1"
 predicates = "3.0"
 escargot = "0.5"
+rexpect = "0.5"

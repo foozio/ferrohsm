@@ -105,7 +105,7 @@
 ### Task 14: Testing and Quality Assurance
 - [ ] Add unit tests for all components
 - [ ] Implement integration tests with mock API
-- [ ] Add end-to-end tests for key workflows
+- [x] Add end-to-end tests for key workflows
 - [ ] Perform usability testing with real users
 - [ ] Fix bugs and issues identified during testing
 
