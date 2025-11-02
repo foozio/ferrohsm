@@ -17,8 +17,8 @@ use ml_dsa::{
     MlDsa44, MlDsa65, MlDsa87,
     signature::{SignatureEncoding, Signer, Verifier},
 };
-use p256::ecdsa::{SigningKey as P256SigningKey, VerifyingKey as P256VerifyingKey};
-use p384::ecdsa::{SigningKey as P384SigningKey, VerifyingKey as P384VerifyingKey};
+use p256::ecdsa::SigningKey as P256SigningKey;
+use p384::ecdsa::SigningKey as P384SigningKey;
 use pkcs8::spki::SubjectPublicKeyInfo;
 use pkcs8::{
     DecodePublicKey, EncodePrivateKey, EncodePublicKey, LineEnding, PrivateKeyInfo,
@@ -1016,13 +1016,13 @@ impl CryptoEngine {
                                 let ec_cipher = match ec_curve {
                                     KeyMaterialType::EcP256 => {
                                         let verifying =
-                                            P256VerifyingKey::from_public_key_pem(ec_public_pem)
+                                            p256::ecdsa::VerifyingKey::from_public_key_pem(ec_public_pem)
                                                 .map_err(HsmError::crypto)?;
                                         verifying.to_encoded_point(false).as_bytes().to_vec()
                                     }
                                     KeyMaterialType::EcP384 => {
                                         let verifying =
-                                            P384VerifyingKey::from_public_key_pem(ec_public_pem)
+                                            p384::ecdsa::VerifyingKey::from_public_key_pem(ec_public_pem)
                                                 .map_err(HsmError::crypto)?;
                                         verifying.to_encoded_point(false).as_bytes().to_vec()
                                     }

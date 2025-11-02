@@ -808,6 +808,7 @@ async fn main() -> anyhow::Result<()> {
     let router = Router::new()
         .route("/healthz", get(health))
         .route("/metrics", get(metrics_endpoint))
+        .route("/.well-known/jwks.json", get(jwks_endpoint))
         .route("/api/v1/keys", get(list_keys).post(create_key))
         .route("/api/v1/keys/:id", get(describe_key))
         .route("/api/v1/keys/:id/rotate", post(rotate_key))
@@ -937,6 +938,13 @@ async fn metrics_endpoint<P: PolicyEngine>(
             Err(AppError::internal("failed to render metrics"))
         }
     }
+}
+
+async fn jwks_endpoint<P: PolicyEngine>(
+    State(state): State<AppState<P>>,
+) -> Result<Json<serde_json::Value>, AppError> {
+    let jwks = state.auth.jwks()?;
+    Ok(Json(jwks))
 }
 
 fn parse_algorithm(input: &str) -> Result<KeyAlgorithm, AppError> {

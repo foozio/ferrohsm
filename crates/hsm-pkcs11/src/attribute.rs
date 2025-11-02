@@ -357,6 +357,7 @@ pub fn get_attribute_value(metadata: &KeyMetadata, attribute_type: CK_ATTRIBUTE_
                 #[cfg(feature = "pqc")]
                 KeyAlgorithm::HybridP256MlKem512 | KeyAlgorithm::HybridP256MlKem768 | KeyAlgorithm::HybridP384MlKem1024
                 | KeyAlgorithm::HybridP256MlDsa44 | KeyAlgorithm::HybridP256MlDsa65 | KeyAlgorithm::HybridP384MlDsa87 => CKO_PRIVATE_KEY,
+                _ => CKO_PRIVATE_KEY,
             };
             Some((class as CK_ULONG).to_be_bytes().to_vec())
         }
@@ -468,9 +469,10 @@ fn algorithm_to_key_type(algorithm: KeyAlgorithm) -> CK_ULONG {
         KeyAlgorithm::SlhDsa128f | KeyAlgorithm::SlhDsa128s | KeyAlgorithm::SlhDsa192f
         | KeyAlgorithm::SlhDsa192s | KeyAlgorithm::SlhDsa256f | KeyAlgorithm::SlhDsa256s => CKK_SLH_DSA,
         #[cfg(feature = "pqc")]
-        KeyAlgorithm::HybridP256MlKem512 | KeyAlgorithm::HybridP256MlKem768 | KeyAlgorithm::HybridP384MlKem1024 => CKK_HYBRID_ECDH_ML_KEM,
+        KeyAlgorithm::HybridP256MlKem512 | KeyAlgorithm::HybridP256MlKem768 | KeyAlgorithm::HybridP384MlKem1024 => CKK_EC,
         #[cfg(feature = "pqc")]
-        KeyAlgorithm::HybridP256MlDsa44 | KeyAlgorithm::HybridP256MlDsa65 | KeyAlgorithm::HybridP384MlDsa87 => CKK_HYBRID_ECDSA_ML_DSA,
+        KeyAlgorithm::HybridP256MlDsa44 | KeyAlgorithm::HybridP256MlDsa65 | KeyAlgorithm::HybridP384MlDsa87 => CKK_EC,
+        _ => CKK_EC,
     }
 }
 

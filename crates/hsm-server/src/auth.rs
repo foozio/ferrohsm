@@ -9,10 +9,13 @@ use std::{
 
 use axum::http::HeaderMap;
 use base64::Engine as _;
-use base64::engine::general_purpose::STANDARD;
+use base64::engine::general_purpose::{STANDARD, URL_SAFE_NO_PAD};
 use hsm_core::{AuthContext, Role};
 use jsonwebtoken::{Algorithm, DecodingKey, Validation, decode, decode_header};
 use parking_lot::{Mutex, RwLock};
+use rsa::pkcs8::DecodePublicKey;
+use rsa::traits::PublicKeyParts;
+use p256::elliptic_curve::sec1::ToEncodedPoint;
 use serde::Deserialize;
 use sha2::{Digest, Sha256};
 use tracing::{error, warn};
@@ -137,6 +140,73 @@ impl AuthVerifier {
         }
         Err(auth_failure("invalid token"))
     }
+
+    pub fn jwks(&self) -> Result<serde_json::Value, AppError> {
+        let config = self.inner.runtime.read();
+        let mut keys = Vec::new();
+
+        for i in 0..config.keys.len() {
+            let kid = config.kids[i].clone();
+            let alg = config.algorithm;
+
+            if alg == Algorithm::HS256 {
+                continue;
+            }
+
+            if let Some(pem) = &config.public_keys[i] {
+                let jwk = match alg {
+                    Algorithm::RS256 => {
+                        let pk = rsa::RsaPublicKey::from_public_key_pem(pem)
+                            .map_err(|_| auth_failure("invalid RSA key"))?;
+                        let n = pk.n().to_bytes_be();
+                        let e = pk.e().to_bytes_be();
+                        serde_json::json!({
+                            "kty": "RSA",
+                            "use": "sig",
+                            "alg": "RS256",
+                            "kid": kid,
+                            "n": URL_SAFE_NO_PAD.encode(&n),
+                            "e": URL_SAFE_NO_PAD.encode(&e),
+                        })
+                    }
+                    Algorithm::ES256 => {
+                        let pk = p256::PublicKey::from_public_key_pem(pem)
+                            .map_err(|_| auth_failure("invalid EC key"))?;
+                        let point = pk.to_encoded_point(false);
+                        let x = point.x().unwrap();
+                        let y = point.y().unwrap();
+                        serde_json::json!({
+                            "kty": "EC",
+                            "use": "sig",
+                            "alg": "ES256",
+                            "kid": kid,
+                            "crv": "P-256",
+                            "x": URL_SAFE_NO_PAD.encode(x),
+                            "y": URL_SAFE_NO_PAD.encode(y),
+                        })
+                    }
+                    Algorithm::EdDSA => {
+                        let pk = ed25519_dalek::VerifyingKey::from_public_key_pem(pem)
+                            .map_err(|_| auth_failure("invalid EdDSA key"))?;
+                        serde_json::json!({
+                            "kty": "OKP",
+                            "use": "sig",
+                            "alg": "EdDSA",
+                            "kid": kid,
+                            "crv": "Ed25519",
+                            "x": URL_SAFE_NO_PAD.encode(&pk.to_bytes()),
+                        })
+                    }
+                    _ => continue,
+                };
+                keys.push(jwk);
+            }
+        }
+
+        Ok(serde_json::json!({
+            "keys": keys
+        }))
+    }
 }
 
 fn build_auth_context(
@@ -233,6 +303,7 @@ struct RuntimeConfig {
     validation: Validation,
     keys: Vec<Arc<DecodingKey>>,
     kids: Vec<Option<String>>,
+    public_keys: Vec<Option<String>>,
 }
 
 impl RuntimeConfig {
@@ -254,6 +325,7 @@ impl RuntimeConfig {
             validation,
             keys: vec![Arc::new(key)],
             kids: vec![None],
+            public_keys: vec![None],
         })
     }
 
@@ -290,7 +362,7 @@ fn derive_throttle_key(
                 hasher.update(token.as_bytes());
                 format!("token:{}", hex::encode(hasher.finalize()))
             }),
-        Algorithm::RS256 | Algorithm::ES256 => format!("sub:{subject}"),
+        Algorithm::RS256 | Algorithm::ES256 | Algorithm::EdDSA => format!("sub:{subject}"),
         _ => {
             let mut hasher = Sha256::new();
             hasher.update(token.as_bytes());
@@ -306,6 +378,7 @@ impl TryFrom<&JwtConfig> for RuntimeConfig {
         let algorithm = value.algorithm.into();
         let mut keys = Vec::new();
         let mut kids = Vec::new();
+        let mut public_keys = Vec::new();
 
         for key_cfg in &value.keys {
             let decoding = match algorithm {
@@ -336,10 +409,17 @@ impl TryFrom<&JwtConfig> for RuntimeConfig {
                     })?;
                     DecodingKey::from_ec_pem(pem.as_bytes())?
                 }
+                Algorithm::EdDSA => {
+                    let pem = key_cfg.public_key_pem.as_deref().ok_or_else(|| {
+                        anyhow::anyhow!("EdDSA keys require 'public_key_pem' field")
+                    })?;
+                    DecodingKey::from_ed_pem(pem.as_bytes())?
+                }
                 other => anyhow::bail!("unsupported algorithm {other:?}"),
             };
             keys.push(Arc::new(decoding));
             kids.push(key_cfg.kid.clone());
+            public_keys.push(key_cfg.public_key_pem.clone());
         }
 
         if keys.is_empty() {
@@ -358,6 +438,7 @@ impl TryFrom<&JwtConfig> for RuntimeConfig {
             validation,
             keys,
             kids,
+            public_keys,
         })
     }
 }
@@ -389,6 +470,7 @@ enum AlgorithmChoice {
     HS256,
     RS256,
     ES256,
+    EdDSA,
 }
 
 impl From<AlgorithmChoice> for Algorithm {
@@ -397,6 +479,7 @@ impl From<AlgorithmChoice> for Algorithm {
             AlgorithmChoice::HS256 => Algorithm::HS256,
             AlgorithmChoice::RS256 => Algorithm::RS256,
             AlgorithmChoice::ES256 => Algorithm::ES256,
+            AlgorithmChoice::EdDSA => Algorithm::EdDSA,
         }
     }
 }
