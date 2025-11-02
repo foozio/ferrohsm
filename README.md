@@ -1,4 +1,4 @@
-# FerroHSM v0.3.0
+# FerroHSM v0.4.0
 
 FerroHSM is a software-based Hardware Security Module implemented in Rust with Secure by Design principles. It offers cryptographic key management, tamper-evident storage, role-based access control, and multiple interfaces for integration with modern platforms.
 
