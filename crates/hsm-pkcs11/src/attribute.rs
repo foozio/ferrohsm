@@ -299,12 +299,12 @@ fn ml_dsa_security_level_to_ulong(level: MlDsaSecurityLevel) -> CK_ULONG {
 #[cfg(feature = "pqc")]
 fn slh_dsa_security_level_to_ulong(level: SlhDsaSecurityLevel) -> CK_ULONG {
     match level {
-        SlhDsaSecurityLevel::SlhDsaSha2128f => 1281,
-        SlhDsaSecurityLevel::SlhDsaSha2128s => 1282,
-        SlhDsaSecurityLevel::SlhDsaSha2192f => 1921,
-        SlhDsaSecurityLevel::SlhDsaSha2192s => 1922,
-        SlhDsaSecurityLevel::SlhDsaSha2256f => 2561,
-        SlhDsaSecurityLevel::SlhDsaSha2256s => 2562,
+        SlhDsaSecurityLevel::SlhDsa128f => 1281,
+        SlhDsaSecurityLevel::SlhDsa128s => 1282,
+        SlhDsaSecurityLevel::SlhDsa192f => 1921,
+        SlhDsaSecurityLevel::SlhDsa192s => 1922,
+        SlhDsaSecurityLevel::SlhDsa256f => 2561,
+        SlhDsaSecurityLevel::SlhDsa256s => 2562,
     }
 }
 
@@ -357,6 +357,7 @@ pub fn get_attribute_value(metadata: &KeyMetadata, attribute_type: CK_ATTRIBUTE_
                 #[cfg(feature = "pqc")]
                 KeyAlgorithm::HybridP256MlKem512 | KeyAlgorithm::HybridP256MlKem768 | KeyAlgorithm::HybridP384MlKem1024
                 | KeyAlgorithm::HybridP256MlDsa44 | KeyAlgorithm::HybridP256MlDsa65 | KeyAlgorithm::HybridP384MlDsa87 => CKO_PRIVATE_KEY,
+                #[cfg(not(feature = "pqc"))]
                 _ => CKO_PRIVATE_KEY,
             };
             Some((class as CK_ULONG).to_be_bytes().to_vec())
@@ -428,29 +429,14 @@ pub fn get_attribute_value(metadata: &KeyMetadata, attribute_type: CK_ATTRIBUTE_
         }
         // Post-quantum specific attributes
         #[cfg(feature = "pqc")]
-        CKA_ML_KEM_SECURITY_LEVEL => {
-            if let Some(level) = algorithm_to_ml_kem_security_level(metadata.algorithm) {
-                Some(ml_kem_security_level_to_ulong(level).to_be_bytes().to_vec())
-            } else {
-                None
-            }
-        }
+        CKA_ML_KEM_SECURITY_LEVEL => algorithm_to_ml_kem_security_level(metadata.algorithm)
+            .map(|level| ml_kem_security_level_to_ulong(level).to_be_bytes().to_vec()),
         #[cfg(feature = "pqc")]
-        CKA_ML_DSA_SECURITY_LEVEL => {
-            if let Some(level) = algorithm_to_ml_dsa_security_level(metadata.algorithm) {
-                Some(ml_dsa_security_level_to_ulong(level).to_be_bytes().to_vec())
-            } else {
-                None
-            }
-        }
+        CKA_ML_DSA_SECURITY_LEVEL => algorithm_to_ml_dsa_security_level(metadata.algorithm)
+            .map(|level| ml_dsa_security_level_to_ulong(level).to_be_bytes().to_vec()),
         #[cfg(feature = "pqc")]
-        CKA_SLH_DSA_SECURITY_LEVEL => {
-            if let Some(level) = algorithm_to_slh_dsa_security_level(metadata.algorithm) {
-                Some(slh_dsa_security_level_to_ulong(level).to_be_bytes().to_vec())
-            } else {
-                None
-            }
-        }
+        CKA_SLH_DSA_SECURITY_LEVEL => algorithm_to_slh_dsa_security_level(metadata.algorithm)
+            .map(|level| slh_dsa_security_level_to_ulong(level).to_be_bytes().to_vec()),
         _ => None, // Attribute not supported
     }
 }
@@ -472,6 +458,7 @@ fn algorithm_to_key_type(algorithm: KeyAlgorithm) -> CK_ULONG {
         KeyAlgorithm::HybridP256MlKem512 | KeyAlgorithm::HybridP256MlKem768 | KeyAlgorithm::HybridP384MlKem1024 => CKK_EC,
         #[cfg(feature = "pqc")]
         KeyAlgorithm::HybridP256MlDsa44 | KeyAlgorithm::HybridP256MlDsa65 | KeyAlgorithm::HybridP384MlDsa87 => CKK_EC,
+        #[cfg(not(feature = "pqc"))]
         _ => CKK_EC,
     }
 }
@@ -508,12 +495,12 @@ fn algorithm_to_ml_dsa_security_level(algorithm: KeyAlgorithm) -> Option<MlDsaSe
 #[cfg(feature = "pqc")]
 fn algorithm_to_slh_dsa_security_level(algorithm: KeyAlgorithm) -> Option<SlhDsaSecurityLevel> {
     match algorithm {
-        KeyAlgorithm::SlhDsa128f => Some(SlhDsaSecurityLevel::SlhDsaSha2128f),
-        KeyAlgorithm::SlhDsa128s => Some(SlhDsaSecurityLevel::SlhDsaSha2128s),
-        KeyAlgorithm::SlhDsa192f => Some(SlhDsaSecurityLevel::SlhDsaSha2192f),
-        KeyAlgorithm::SlhDsa192s => Some(SlhDsaSecurityLevel::SlhDsaSha2192s),
-        KeyAlgorithm::SlhDsa256f => Some(SlhDsaSecurityLevel::SlhDsaSha2256f),
-        KeyAlgorithm::SlhDsa256s => Some(SlhDsaSecurityLevel::SlhDsaSha2256s),
+        KeyAlgorithm::SlhDsa128f => Some(SlhDsaSecurityLevel::SlhDsa128f),
+        KeyAlgorithm::SlhDsa128s => Some(SlhDsaSecurityLevel::SlhDsa128s),
+        KeyAlgorithm::SlhDsa192f => Some(SlhDsaSecurityLevel::SlhDsa192f),
+        KeyAlgorithm::SlhDsa192s => Some(SlhDsaSecurityLevel::SlhDsa192s),
+        KeyAlgorithm::SlhDsa256f => Some(SlhDsaSecurityLevel::SlhDsa256f),
+        KeyAlgorithm::SlhDsa256s => Some(SlhDsaSecurityLevel::SlhDsa256s),
         _ => None,
     }
 }

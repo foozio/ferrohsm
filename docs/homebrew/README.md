@@ -34,7 +34,7 @@ To submit to the official Homebrew repository:
 1. Fork the [homebrew-core](https://github.com/Homebrew/homebrew-core) repository
 2. Create a new branch for your formula
 3. Add the `ferrohsm.rb` formula to the `Formula/` directory
-4. Commit your changes with a message like: "ferrohsm: add 0.2.1"
+4. Commit your changes with a message like: "ferrohsm: add 0.4.0"
 5. Create a pull request to the homebrew-core repository
 
 Requirements for homebrew-core submission:
@@ -48,7 +48,7 @@ When releasing a new version of FerroHSM:
 
 1. Run `scripts/package_homebrew.sh` with the new version number:
    ```bash
-    ./scripts/package_homebrew.sh 0.4.0
+   ./scripts/package_homebrew.sh 0.4.0
    ```
    
 2. Upload the generated tarball to GitHub Releases

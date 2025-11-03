@@ -90,8 +90,8 @@ fn test_slh_dsa_sign_verify() {
     let message = b"This is a test message for SLH-DSA signature";
 
     for level in [
-        SlhDsaSecurityLevel::SlhDsaSha2128f,
-        SlhDsaSecurityLevel::SlhDsaSha2256f,
+        SlhDsaSecurityLevel::SlhDsa128f,
+        SlhDsaSecurityLevel::SlhDsa256f,
     ] {
         let (public_key, private_key) = pq_keypair(
             provider

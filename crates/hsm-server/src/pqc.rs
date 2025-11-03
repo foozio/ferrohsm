@@ -5,9 +5,9 @@
 use axum::{
     Router,
     extract::{Path as AxumPath, State, connect_info::ConnectInfo},
-    http::{HeaderMap, StatusCode},
+    http::HeaderMap,
     response::Json,
-    routing::{get, post},
+    routing::post,
 };
 #[cfg(feature = "pqc")]
 use base64::{Engine as _, engine::general_purpose::STANDARD as B64};
@@ -31,6 +31,7 @@ use crate::{AppError, KeySummary, authenticate_request};
 #[derive(Debug, Deserialize)]
 pub struct CreatePqKeyRequest {
     pub algorithm: PqKeyAlgorithm,
+    #[allow(dead_code)]
     pub security_level: Option<MlKemSecurityLevel>, // Default to MlKemSecurityLevel for now
     pub usage: KeyUsage,
     pub policy_tags: Option<Vec<String>>,
@@ -41,7 +42,9 @@ pub struct CreatePqKeyRequest {
 #[derive(Debug, Deserialize)]
 pub struct CreateHybridKeyRequest {
     pub pq_algorithm: PqKeyAlgorithm,
+    #[allow(dead_code)]
     pub security_level: Option<MlKemSecurityLevel>, // Default to MlKemSecurityLevel for now
+    #[allow(dead_code)]
     pub classic_algorithm: KeyAlgorithm,
     pub usage: KeyUsage,
     pub policy_tags: Option<Vec<String>>,
@@ -112,12 +115,12 @@ async fn create_pq_key<P: hsm_core::PolicyEngine>(
             MlDsaSecurityLevel::MlDsa87 => KeyAlgorithm::MlDsa87,
         },
         PqKeyAlgorithm::SlhDsa(security_level) => match security_level {
-            SlhDsaSecurityLevel::SlhDsaSha2128f => KeyAlgorithm::SlhDsa128f,
-            SlhDsaSecurityLevel::SlhDsaSha2128s => KeyAlgorithm::SlhDsa128s,
-            SlhDsaSecurityLevel::SlhDsaSha2192f => KeyAlgorithm::SlhDsa192f,
-            SlhDsaSecurityLevel::SlhDsaSha2192s => KeyAlgorithm::SlhDsa192s,
-            SlhDsaSecurityLevel::SlhDsaSha2256f => KeyAlgorithm::SlhDsa256f,
-            SlhDsaSecurityLevel::SlhDsaSha2256s => KeyAlgorithm::SlhDsa256s,
+            SlhDsaSecurityLevel::SlhDsa128f => KeyAlgorithm::SlhDsa128f,
+            SlhDsaSecurityLevel::SlhDsa128s => KeyAlgorithm::SlhDsa128s,
+            SlhDsaSecurityLevel::SlhDsa192f => KeyAlgorithm::SlhDsa192f,
+            SlhDsaSecurityLevel::SlhDsa192s => KeyAlgorithm::SlhDsa192s,
+            SlhDsaSecurityLevel::SlhDsa256f => KeyAlgorithm::SlhDsa256f,
+            SlhDsaSecurityLevel::SlhDsa256s => KeyAlgorithm::SlhDsa256s,
         },
         _ => {
             return Err(AppError::bad_request(

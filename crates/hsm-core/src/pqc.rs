@@ -3,8 +3,8 @@ use std::fmt;
 use serde::{Deserialize, Serialize};
 
 use crate::{
-    error::{HsmError, HsmResult},
-    models::{GeneratedKey, KeyAlgorithm, KeyMaterial, KeyMaterialType, KeyMetadata},
+    error::HsmResult,
+    models::{KeyAlgorithm, KeyMaterial, KeyMaterialType},
 };
 
 /// Post-Quantum Cryptography provider trait
@@ -139,28 +139,28 @@ impl fmt::Display for MlDsaSecurityLevel {
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 pub enum SlhDsaSecurityLevel {
     /// SLH-DSA-SHA2-128f (fast variant, security roughly equivalent to AES-128)
-    SlhDsaSha2128f,
+    SlhDsa128f,
     /// SLH-DSA-SHA2-128s (small variant, security roughly equivalent to AES-128)
-    SlhDsaSha2128s,
+    SlhDsa128s,
     /// SLH-DSA-SHA2-192f (fast variant, security roughly equivalent to AES-192)
-    SlhDsaSha2192f,
+    SlhDsa192f,
     /// SLH-DSA-SHA2-192s (small variant, security roughly equivalent to AES-192)
-    SlhDsaSha2192s,
+    SlhDsa192s,
     /// SLH-DSA-SHA2-256f (fast variant, security roughly equivalent to AES-256)
-    SlhDsaSha2256f,
+    SlhDsa256f,
     /// SLH-DSA-SHA2-256s (small variant, security roughly equivalent to AES-256)
-    SlhDsaSha2256s,
+    SlhDsa256s,
 }
 
 impl fmt::Display for SlhDsaSecurityLevel {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
-            SlhDsaSecurityLevel::SlhDsaSha2128f => write!(f, "SLH-DSA-SHA2-128f"),
-            SlhDsaSecurityLevel::SlhDsaSha2128s => write!(f, "SLH-DSA-SHA2-128s"),
-            SlhDsaSecurityLevel::SlhDsaSha2192f => write!(f, "SLH-DSA-SHA2-192f"),
-            SlhDsaSecurityLevel::SlhDsaSha2192s => write!(f, "SLH-DSA-SHA2-192s"),
-            SlhDsaSecurityLevel::SlhDsaSha2256f => write!(f, "SLH-DSA-SHA2-256f"),
-            SlhDsaSecurityLevel::SlhDsaSha2256s => write!(f, "SLH-DSA-SHA2-256s"),
+            SlhDsaSecurityLevel::SlhDsa128f => write!(f, "SLH-DSA-128f"),
+            SlhDsaSecurityLevel::SlhDsa128s => write!(f, "SLH-DSA-128s"),
+            SlhDsaSecurityLevel::SlhDsa192f => write!(f, "SLH-DSA-192f"),
+            SlhDsaSecurityLevel::SlhDsa192s => write!(f, "SLH-DSA-192s"),
+            SlhDsaSecurityLevel::SlhDsa256f => write!(f, "SLH-DSA-256f"),
+            SlhDsaSecurityLevel::SlhDsa256s => write!(f, "SLH-DSA-256s"),
         }
     }
 }

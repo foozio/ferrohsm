@@ -77,6 +77,12 @@ impl MockAuditAnchor {
     }
 }
 
+impl Default for MockAuditAnchor {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl AuditAnchor for MockAuditAnchor {
     fn anchor_hash(&self, hash: &str, timestamp: OffsetDateTime) -> HsmResult<()> {
         tracing::info!("Anchoring audit hash {} at {}", hash, timestamp);
@@ -141,7 +147,7 @@ impl FileAuditLog {
         })
     }
 
-    pub fn with_signing_key(mut self, key: Vec<u8>) -> Self {
+    pub fn with_signing_key(self, key: Vec<u8>) -> Self {
         *self.key.lock() = Some(key);
         *self.key_created_at.lock() = Some(OffsetDateTime::now_utc());
         self
@@ -169,17 +175,18 @@ impl FileAuditLog {
         let now = OffsetDateTime::now_utc();
 
         // Check record count
-        if let Some(max_records) = self.rotation_policy.max_records {
-            if chain.record_count >= max_records {
-                return true;
-            }
+        if let Some(max_records) = self.rotation_policy.max_records
+            && chain.record_count >= max_records
+        {
+            return true;
         }
 
         // Check age
-        if let (Some(max_age), Some(created_at)) = (self.rotation_policy.max_age_seconds, *self.key_created_at.lock()) {
-            if (now - created_at).as_seconds_f64() >= max_age as f64 {
-                return true;
-            }
+        if let (Some(max_age), Some(created_at)) =
+            (self.rotation_policy.max_age_seconds, *self.key_created_at.lock())
+            && (now - created_at).as_seconds_f64() >= max_age as f64
+        {
+            return true;
         }
 
         false
@@ -222,10 +229,10 @@ impl FileAuditLog {
             }
 
             // Verify signature if present
-            if let (Some(sig), Some(key)) = (&event.signature, self.key.lock().as_ref()) {
-                if !crate::crypto::verify_audit_signature(key, &event.record, sig) {
-                    return Ok(false);
-                }
+            if let (Some(sig), Some(key)) = (&event.signature, self.key.lock().as_ref())
+                && !crate::crypto::verify_audit_signature(key, &event.record, sig)
+            {
+                return Ok(false);
             }
 
             prev_hash = Some(event.hash);
@@ -244,10 +251,10 @@ impl FileAuditLog {
         // Verify external anchors if available
         if let Some(anchor) = &self.anchor {
             let chain = self.chain.lock();
-            if let Some(last_hash) = &chain.last_hash {
-                if !anchor.verify_anchor(last_hash)? {
-                    return Err(HsmError::audit("External anchor verification failed"));
-                }
+            if let Some(last_hash) = &chain.last_hash
+                && !anchor.verify_anchor(last_hash)?
+            {
+                return Err(HsmError::audit("External anchor verification failed"));
             }
         }
 
@@ -344,10 +351,10 @@ impl AuditLog for FileAuditLog {
         FileExt::unlock(&file).map_err(HsmError::audit)?;
 
         // Anchor hash to external store periodically (every 100 records)
-        if let Some(anchor) = &self.anchor {
-            if chain.record_count % 100 == 0 {
-                anchor.anchor_hash(&hash, timestamp)?;
-            }
+        if let Some(anchor) = &self.anchor
+            && chain.record_count.is_multiple_of(100)
+        {
+            anchor.anchor_hash(&hash, timestamp)?;
         }
         chain.record_count += 1;
 

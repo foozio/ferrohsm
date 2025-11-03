@@ -156,10 +156,10 @@ pub fn handle_sign(
         
         // SLH-DSA signature mechanisms
         m if m == crate::mechanism::CKM_SLH_DSA_SHA2_128F as u64 => {
-            perform_slh_dsa_sign(data, SlhDsaSecurityLevel::SlhDsaSha2128f, crypto_engine)?
+            perform_slh_dsa_sign(data, SlhDsaSecurityLevel::SlhDsa128f, crypto_engine)?
         }
         m if m == crate::mechanism::CKM_SLH_DSA_SHA2_256F as u64 => {
-            perform_slh_dsa_sign(data, SlhDsaSecurityLevel::SlhDsaSha2256f, crypto_engine)?
+            perform_slh_dsa_sign(data, SlhDsaSecurityLevel::SlhDsa256f, crypto_engine)?
         }
         
         // Hybrid signature mechanisms
@@ -239,10 +239,10 @@ pub fn handle_verify(
         
         // SLH-DSA verification mechanisms
         m if m == crate::mechanism::CKM_SLH_DSA_SHA2_128F as u64 => {
-            perform_slh_dsa_verify(data, signature, SlhDsaSecurityLevel::SlhDsaSha2128f, crypto_engine)?
+            perform_slh_dsa_verify(data, signature, SlhDsaSecurityLevel::SlhDsa128f, crypto_engine)?
         }
         m if m == crate::mechanism::CKM_SLH_DSA_SHA2_256F as u64 => {
-            perform_slh_dsa_verify(data, signature, SlhDsaSecurityLevel::SlhDsaSha2256f, crypto_engine)?
+            perform_slh_dsa_verify(data, signature, SlhDsaSecurityLevel::SlhDsa256f, crypto_engine)?
         }
         
         // Hybrid verification mechanisms
@@ -438,12 +438,12 @@ fn perform_slh_dsa_sign(
     // In a real implementation, we would use the CryptoEngine to perform the signing operation
     // For now, we'll return a dummy signature of appropriate size for the security level
     let signature_size = match security_level {
-        SlhDsaSecurityLevel::SlhDsaSha2128f => 17088,
-        SlhDsaSecurityLevel::SlhDsaSha2128s => 7856,
-        SlhDsaSecurityLevel::SlhDsaSha2192f => 35664,
-        SlhDsaSecurityLevel::SlhDsaSha2192s => 16224,
-        SlhDsaSecurityLevel::SlhDsaSha2256f => 49856,
-        SlhDsaSecurityLevel::SlhDsaSha2256s => 29792,
+        SlhDsaSecurityLevel::SlhDsa128f => 17088,
+        SlhDsaSecurityLevel::SlhDsa128s => 7856,
+        SlhDsaSecurityLevel::SlhDsa192f => 35664,
+        SlhDsaSecurityLevel::SlhDsa192s => 16224,
+        SlhDsaSecurityLevel::SlhDsa256f => 49856,
+        SlhDsaSecurityLevel::SlhDsa256s => 29792,
     };
     
     Ok(vec![0u8; signature_size])
@@ -507,12 +507,12 @@ fn perform_slh_dsa_verify(
     // In a real implementation, we would use the CryptoEngine to perform the verification
     // For now, we'll just check if the signature has the expected size
     let expected_size = match security_level {
-        SlhDsaSecurityLevel::SlhDsaSha2128f => 17088,
-        SlhDsaSecurityLevel::SlhDsaSha2128s => 7856,
-        SlhDsaSecurityLevel::SlhDsaSha2192f => 35664,
-        SlhDsaSecurityLevel::SlhDsaSha2192s => 16224,
-        SlhDsaSecurityLevel::SlhDsaSha2256f => 49856,
-        SlhDsaSecurityLevel::SlhDsaSha2256s => 29792,
+        SlhDsaSecurityLevel::SlhDsa128f => 17088,
+        SlhDsaSecurityLevel::SlhDsa128s => 7856,
+        SlhDsaSecurityLevel::SlhDsa192f => 35664,
+        SlhDsaSecurityLevel::SlhDsa192s => 16224,
+        SlhDsaSecurityLevel::SlhDsa256f => 49856,
+        SlhDsaSecurityLevel::SlhDsa256s => 29792,
     };
     
     if signature.len() != expected_size {

@@ -10,6 +10,12 @@ use crate::{
 /// OQS-based implementation of the CryptoProvider trait
 pub struct OqsCryptoProvider;
 
+impl Default for OqsCryptoProvider {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl OqsCryptoProvider {
     pub fn new() -> Self {
         Self
@@ -53,23 +59,23 @@ impl OqsCryptoProvider {
 
     fn slhdsa_algorithm(level: SlhDsaSecurityLevel) -> SigAlgorithm {
         match level {
-            SlhDsaSecurityLevel::SlhDsaSha2128f => SigAlgorithm::SphincsSha2128fSimple,
-            SlhDsaSecurityLevel::SlhDsaSha2128s => SigAlgorithm::SphincsSha2128sSimple,
-            SlhDsaSecurityLevel::SlhDsaSha2192f => SigAlgorithm::SphincsSha2192fSimple,
-            SlhDsaSecurityLevel::SlhDsaSha2192s => SigAlgorithm::SphincsSha2192sSimple,
-            SlhDsaSecurityLevel::SlhDsaSha2256f => SigAlgorithm::SphincsSha2256fSimple,
-            SlhDsaSecurityLevel::SlhDsaSha2256s => SigAlgorithm::SphincsSha2256sSimple,
+            SlhDsaSecurityLevel::SlhDsa128f => SigAlgorithm::SphincsSha2128fSimple,
+            SlhDsaSecurityLevel::SlhDsa128s => SigAlgorithm::SphincsSha2128sSimple,
+            SlhDsaSecurityLevel::SlhDsa192f => SigAlgorithm::SphincsSha2192fSimple,
+            SlhDsaSecurityLevel::SlhDsa192s => SigAlgorithm::SphincsSha2192sSimple,
+            SlhDsaSecurityLevel::SlhDsa256f => SigAlgorithm::SphincsSha2256fSimple,
+            SlhDsaSecurityLevel::SlhDsa256s => SigAlgorithm::SphincsSha2256sSimple,
         }
     }
 
     fn slhdsa_variant(level: SlhDsaSecurityLevel) -> &'static str {
         match level {
-            SlhDsaSecurityLevel::SlhDsaSha2128f => "SHA2-128f",
-            SlhDsaSecurityLevel::SlhDsaSha2128s => "SHA2-128s",
-            SlhDsaSecurityLevel::SlhDsaSha2192f => "SHA2-192f",
-            SlhDsaSecurityLevel::SlhDsaSha2192s => "SHA2-192s",
-            SlhDsaSecurityLevel::SlhDsaSha2256f => "SHA2-256f",
-            SlhDsaSecurityLevel::SlhDsaSha2256s => "SHA2-256s",
+            SlhDsaSecurityLevel::SlhDsa128f => "128f",
+            SlhDsaSecurityLevel::SlhDsa128s => "128s",
+            SlhDsaSecurityLevel::SlhDsa192f => "192f",
+            SlhDsaSecurityLevel::SlhDsa192s => "192s",
+            SlhDsaSecurityLevel::SlhDsa256f => "256f",
+            SlhDsaSecurityLevel::SlhDsa256s => "256s",
         }
     }
 

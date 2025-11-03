@@ -194,7 +194,7 @@ impl AuthVerifier {
                             "alg": "EdDSA",
                             "kid": kid,
                             "crv": "Ed25519",
-                            "x": URL_SAFE_NO_PAD.encode(&pk.to_bytes()),
+                            "x": URL_SAFE_NO_PAD.encode(pk.to_bytes()),
                         })
                     }
                     _ => continue,

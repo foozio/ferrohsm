@@ -22,7 +22,7 @@ use std::{io, panic};
 
 /// FerroHSM TUI - Text-based User Interface for FerroHSM
 #[derive(Parser)]
-#[clap(name = "hsm-tui", version = "0.3.0")]
+#[command(name = "hsm-tui", version)]
 struct Cli {
     /// Server endpoint
     #[clap(long, default_value = "https://localhost:8443")]

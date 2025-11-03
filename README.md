@@ -4,11 +4,9 @@ FerroHSM is a software-based Hardware Security Module implemented in Rust with S
 
 ## What's New in v0.4.0
 
-- **Audit Log Integrity Enhancements**: Hash-chain anchoring to external stores, periodic checkpoint verification, and automated signing key rotation for tamper-evident audit trails
-- **PKCS#11 Completion**: Session/token management, cryptographic mechanisms, and comprehensive error mapping for full PKCS#11 v2.40 compliance
-- **Security Hardening**: JWT authentication improvements with cloud KMS integration, asymmetric verification, and JWKS endpoints
-- **Storage Backend Fixes**: SQLite backend fixes and migration tooling between storage backends
-- **Error Handling Improvements**: Expanded REST API error taxonomy with comprehensive logging and graceful degradation
+- **Unified Versioning**: All binaries and documentation now derive their version metadata directly from crate definitions, preventing drift across surfaces like the TUI and installers.
+- **PKCS#11 Alignment**: Updated SLH-DSA parameter naming and metadata handling to track the latest specs and improve hybrid key interoperability.
+- **Release Tooling Refresh**: Homebrew assets, installation scripts, and tests have been refreshed for 0.4.0 to keep installation paths and automation up to date.
 
 ## Crate Overview
 
