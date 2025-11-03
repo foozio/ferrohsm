@@ -50,6 +50,7 @@ struct Cli {
 enum AppMode {
     MainMenu,
     KeysList,
+    KeysListSearch,
     KeyCreate,
     KeyOperations,
     ApprovalsList,
@@ -69,6 +70,7 @@ struct AppState {
     error: Option<AppError>,
     loading_message: Option<String>,
     config: AppConfig,
+    keys_search: String,
 }
 
 impl AppState {
@@ -95,6 +97,7 @@ impl AppState {
             error: None,
             loading_message: None,
             config,
+            keys_search: String::new(),
         })
     }
 
@@ -216,7 +219,7 @@ impl App {
                     AppMode::MainMenu => {
                         self.state.main_menu.render(f, chunks[1]);
                     }
-                    AppMode::KeysList => {
+                    AppMode::KeysList | AppMode::KeysListSearch => {
                         self.draw_keys_list(f, chunks[1]);
                     }
                     AppMode::KeyCreate => {
@@ -270,15 +273,35 @@ impl App {
     // Main menu is now handled by the MainMenu component in draw()
 
     fn draw_keys_list(&self, f: &mut Frame, area: Rect) {
-        let content = Paragraph::new("Keys List View\n\nList and manage cryptographic keys.")
+        let chunks = ratatui::layout::Layout::default()
+            .direction(ratatui::layout::Direction::Vertical)
+            .constraints([
+                ratatui::layout::Constraint::Length(3),
+                ratatui::layout::Constraint::Min(1),
+            ])
+            .split(area);
+
+        // Search input
+        let search_input = Paragraph::new(format!("Search: {}", self.state.keys_search))
             .block(
                 Block::default()
                     .borders(Borders::ALL)
-                    .title("Keys Management")
+                    .title("Filter Keys")
                     .border_style(self.state.config.theme.secondary_style()),
             )
             .style(self.state.config.theme.text_style());
-        f.render_widget(content, area);
+        f.render_widget(search_input, chunks[0]);
+
+        // Keys list
+        let content = Paragraph::new("Keys List View\n\nList and manage cryptographic keys.\n\nUse the search above to filter keys.")
+            .block(
+                Block::default()
+                    .borders(Borders::ALL)
+                    .title("Keys")
+                    .border_style(self.state.config.theme.secondary_style()),
+            )
+            .style(self.state.config.theme.text_style());
+        f.render_widget(content, chunks[1]);
     }
 
     fn draw_key_create(&self, f: &mut Frame, area: Rect) {

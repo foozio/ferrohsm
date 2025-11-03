@@ -7,7 +7,7 @@ use std::{
 
 use anyhow::{Context, anyhow, bail};
 use base64::{Engine as _, engine::general_purpose::STANDARD as B64};
-use clap::{Parser, Subcommand, ValueEnum};
+use clap::{CommandFactory, Parser, Subcommand, ValueEnum};
 use comfy_table::{Table, presets::UTF8_FULL};
 use hsm_core::{
     AuditEvent, KeyAlgorithm, KeyPurpose, KeyUsage, compute_event_hash, crypto::sign_audit_record,
@@ -160,6 +160,22 @@ enum Commands {
         #[command(subcommand)]
         action: AuditCommands,
     },
+    /// Execute batch operations from a file.
+    Batch {
+        /// Path to batch operations file (JSON or YAML).
+        file: PathBuf,
+    },
+    /// Generate shell completion scripts.
+    Completion {
+        /// Shell to generate completion for.
+        #[arg(value_enum)]
+        shell: clap_complete::Shell,
+    },
+    /// Backup and restore operations.
+    Backup {
+        #[command(subcommand)]
+        action: BackupCommands,
+    },
 }
 
 #[derive(Subcommand, Debug)]
@@ -183,7 +199,22 @@ enum AuditCommands {
     },
 }
 
+#[derive(Subcommand, Debug)]
+enum BackupCommands {
+    /// Export all keys to a backup file.
+    Export {
+        /// Output file for backup.
+        file: PathBuf,
+    },
+    /// Import keys from a backup file.
+    Import {
+        /// Input file for backup.
+        file: PathBuf,
+    },
+}
+
 #[derive(Clone, Copy, Debug, ValueEnum)]
+#[derive(serde::Deserialize)]
 enum AlgorithmArg {
     Aes256Gcm,
     Rsa2048,
@@ -205,6 +236,7 @@ impl From<AlgorithmArg> for KeyAlgorithm {
 }
 
 #[derive(Clone, Copy, Debug, ValueEnum)]
+#[derive(serde::Deserialize)]
 enum UsageArg {
     Encrypt,
     Decrypt,
@@ -327,6 +359,22 @@ async fn main() -> anyhow::Result<()> {
                 hmac_key.as_deref(),
             )?,
         },
+        Commands::Batch { file } => {
+            execute_batch(&client, &cli, &auth_token, &file).await?
+        }
+        Commands::Completion { shell } => {
+            let mut cmd = Cli::command();
+            let name = cmd.get_name().to_string();
+            clap_complete::generate(*shell, &mut cmd, name, &mut std::io::stdout());
+        }
+        Commands::Backup { action } => match action {
+            BackupCommands::Export { file } => {
+                export_backup(&client, &cli, &auth_token, &file).await?
+            }
+            BackupCommands::Import { file } => {
+                import_backup(&client, &cli, &auth_token, &file).await?
+            }
+        }
     }
     Ok(())
 }
@@ -877,6 +925,80 @@ fn decode_secret(secret: &str) -> anyhow::Result<Vec<u8>> {
     }
 }
 
+async fn execute_batch(
+    client: &Client,
+    cli: &Cli,
+    token: &str,
+    file_path: &Path,
+) -> anyhow::Result<()> {
+    let content = fs::read_to_string(file_path)
+        .with_context(|| format!("reading batch file {}", file_path.display()))?;
+    let batch: BatchFile = if file_path.extension().and_then(|s| s.to_str()) == Some("yaml") || file_path.extension().and_then(|s| s.to_str()) == Some("yml") {
+        serde_yaml::from_str(&content)?
+    } else {
+        serde_json::from_str(&content)?
+    };
+
+    for (idx, op) in batch.operations.into_iter().enumerate() {
+        println!("Executing operation {}: {:?}", idx + 1, op);
+        match op {
+            BatchOperation::CreateKey { algorithm, description, usage, tags } => {
+                create_key(client, cli, token, algorithm, description, usage, tags).await?;
+            }
+            BatchOperation::Sign { key_id, payload, base64 } => {
+                sign_payload(client, cli, token, &key_id, &payload, base64).await?;
+            }
+            BatchOperation::Encrypt { key_id, plaintext, base64 } => {
+                encrypt_payload(client, cli, token, &key_id, &plaintext, base64).await?;
+            }
+            BatchOperation::Decrypt { key_id, ciphertext_b64, nonce_b64 } => {
+                decrypt_payload(client, cli, token, &key_id, &ciphertext_b64, &nonce_b64).await?;
+            }
+        }
+    }
+    println!("Batch execution completed.");
+    Ok(())
+}
+
+async fn export_backup(
+    client: &Client,
+    cli: &Cli,
+    token: &str,
+    file_path: &Path,
+) -> anyhow::Result<()> {
+    let headers = auth_headers(token)?;
+    let response = client
+        .get(format!("{}/api/v1/keys", cli.endpoint))
+        .headers(headers)
+        .send()
+        .await?
+        .error_for_status()?;
+    let KeyListResponse { items, .. } = response.json().await?;
+    let backup = serde_json::to_string_pretty(&items)?;
+    fs::write(file_path, backup)?;
+    println!("Exported {} keys to {}", items.len(), file_path.display());
+    Ok(())
+}
+
+async fn import_backup(
+    _client: &Client,
+    _cli: &Cli,
+    _token: &str,
+    file_path: &Path,
+) -> anyhow::Result<()> {
+    let content = fs::read_to_string(file_path)?;
+    let keys: Vec<KeySummary> = serde_json::from_str(&content)?;
+    let count = keys.len();
+    for key in keys {
+        // Note: This is a simplified import - in reality, importing keys requires special handling
+        // as key material cannot be imported via API for security reasons.
+        // This would need a special admin endpoint or direct database access.
+        println!("Would import key: {} ({:?})", key.id, key.algorithm);
+    }
+    println!("Import simulation completed for {} keys", count);
+    Ok(())
+}
+
 fn verify_audit_log_cli(path: &Path, hmac_key: Option<&str>) -> anyhow::Result<()> {
     let file =
         fs::File::open(path).with_context(|| format!("opening audit log {}", path.display()))?;
@@ -960,7 +1082,7 @@ struct TokenClaims {
     rip: Option<String>,
 }
 
-#[derive(Debug, Deserialize)]
+#[derive(Debug, Deserialize, Serialize)]
 struct KeySummary {
     id: String,
     algorithm: KeyAlgorithm,
@@ -1039,4 +1161,37 @@ struct ApprovalListItem {
     created_at: String,
     approved_by: Option<String>,
     approved_at: Option<String>,
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(tag = "operation")]
+enum BatchOperation {
+    CreateKey {
+        algorithm: AlgorithmArg,
+        description: Option<String>,
+        usage: Vec<UsageArg>,
+        tags: Vec<String>,
+    },
+    Sign {
+        key_id: String,
+        payload: String,
+        #[serde(default)]
+        base64: bool,
+    },
+    Encrypt {
+        key_id: String,
+        plaintext: String,
+        #[serde(default)]
+        base64: bool,
+    },
+    Decrypt {
+        key_id: String,
+        ciphertext_b64: String,
+        nonce_b64: String,
+    },
+}
+
+#[derive(Debug, Deserialize)]
+struct BatchFile {
+    operations: Vec<BatchOperation>,
 }
