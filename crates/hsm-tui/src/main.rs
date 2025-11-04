@@ -4,7 +4,7 @@ mod error;
 mod event;
 mod ui;
 
-use crate::api::{ApiClient, KeySummary, ApprovalResponse, PaginatedKeys, KeyListQuery, CreateKeyRequest};
+use crate::api::{ApiClient, KeySummary, ApprovalResponse, PaginatedKeys, KeyListQuery, CreateKeyRequest, PaginatedAuditLogs, AuditLogQuery};
 use crate::config::AppConfig;
 use crate::error::{AppError, ErrorDisplay};
 use crate::event::{EventLoop, EventResult};
@@ -89,9 +89,12 @@ struct AppState {
     // Cached data
     keys: Option<PaginatedKeys>,
     approvals: Option<Vec<ApprovalResponse>>,
+    audit_logs: Option<PaginatedAuditLogs>,
     selected_key: Option<KeySummary>,
     user_info: Option<crate::api::UserInfo>,
     selected_approval_index: usize,
+    selected_audit_index: usize,
+    audit_page: u32,
     // Input fields
     auth_token_input: String,
     // Crypto operation fields
@@ -157,9 +160,12 @@ impl AppState {
             api_client,
             keys: None,
             approvals: None,
+            audit_logs: None,
             selected_key: None,
             user_info,
             selected_approval_index: 0,
+            selected_audit_index: 0,
+            audit_page: 1,
             auth_token_input: String::new(),
             crypto_operation: None,
             crypto_key_id: String::new(),
@@ -303,6 +309,35 @@ impl AppState {
                         ));
                     }
                 }
+            }
+        }
+        Ok(())
+    }
+
+    async fn fetch_audit_logs(&mut self) -> Result<()> {
+        if !self.api_client.is_authenticated() {
+            return Ok(());
+        }
+
+        let query = AuditLogQuery {
+            page: Some(self.audit_page),
+            per_page: Some(self.config.default_page_size as u32),
+            user: None,
+            action: None,
+            from: None,
+            to: None,
+        };
+
+        match self.api_client.list_audit_logs(&query).await {
+            Ok(logs) => {
+                self.audit_logs = Some(logs);
+                self.selected_audit_index = 0;
+            }
+            Err(e) => {
+                self.error = Some(AppError::new(
+                    axum::http::StatusCode::INTERNAL_SERVER_ERROR,
+                    format!("Failed to load audit logs: {}", e),
+                ));
             }
         }
         Ok(())
@@ -481,6 +516,11 @@ impl AppState {
                             self.selected_approval_index -= 1;
                         }
                     }
+                    AppMode::AuditViewer => {
+                        if self.selected_audit_index > 0 {
+                            self.selected_audit_index -= 1;
+                        }
+                    }
                     _ => {}
                 }
             }
@@ -498,6 +538,13 @@ impl AppState {
                         if let Some(approvals) = &self.approvals {
                             if self.selected_approval_index < approvals.len().saturating_sub(1) {
                                 self.selected_approval_index += 1;
+                            }
+                        }
+                    }
+                    AppMode::AuditViewer => {
+                        if let Some(logs) = &self.audit_logs {
+                            if self.selected_audit_index < logs.items.len().saturating_sub(1) {
+                                self.selected_audit_index += 1;
                             }
                         }
                     }
@@ -529,7 +576,13 @@ impl AppState {
                                 self.fetch_approvals().await?;
                             }
                         }
-                            4 => self.mode = AppMode::AuditViewer,
+                            4 => {
+                            self.mode = AppMode::AuditViewer;
+                            if self.audit_logs.is_none() {
+                                self.loading_message = Some("Loading audit logs...".to_string());
+                                self.fetch_audit_logs().await?;
+                            }
+                        }
                             5 => self.mode = AppMode::Settings,
                             6 => self.mode = AppMode::Help,
                             7 => self.quit = true,
@@ -552,6 +605,7 @@ impl AppState {
                     AppMode::MainMenu => self.quit = true,
                     AppMode::KeysList => self.mode = AppMode::MainMenu,
                     AppMode::KeysListSearch => self.mode = AppMode::KeysList,
+                    AppMode::AuditViewer => self.mode = AppMode::MainMenu,
                     AppMode::KeyDetails => self.mode = AppMode::KeysList,
                     AppMode::SettingsAuth => self.mode = AppMode::Settings,
                     _ => self.mode = AppMode::MainMenu,
@@ -619,6 +673,13 @@ impl AppState {
                 self.help_panel.add_shortcut("↑↓".to_string(), "Navigate approvals".to_string());
                 self.help_panel.add_shortcut("a".to_string(), "Approve selected".to_string());
                 self.help_panel.add_shortcut("d".to_string(), "Deny selected".to_string());
+                self.help_panel.add_shortcut("Esc".to_string(), "Back to menu".to_string());
+            }
+            AppMode::AuditViewer => {
+                self.help_panel.add_shortcut("↑↓".to_string(), "Navigate logs".to_string());
+                self.help_panel.add_shortcut("n".to_string(), "Next page".to_string());
+                self.help_panel.add_shortcut("p".to_string(), "Previous page".to_string());
+                self.help_panel.add_shortcut("Enter".to_string(), "View log details".to_string());
                 self.help_panel.add_shortcut("Esc".to_string(), "Back to menu".to_string());
             }
             AppMode::Settings => {
@@ -710,6 +771,23 @@ impl App {
                     self.approve_selected_approval().await?;
                 } else if c == 'd' || c == 'D' {
                     self.deny_selected_approval().await?;
+                }
+            }
+            AppMode::AuditViewer => {
+                if c == 'n' || c == 'N' {
+                    if let Some(logs) = &self.audit_logs {
+                        if logs.has_more {
+                            self.audit_page += 1;
+                            self.loading_message = Some("Loading audit logs...".to_string());
+                            self.fetch_audit_logs().await?;
+                        }
+                    }
+                } else if c == 'p' || c == 'P' {
+                    if self.audit_page > 1 {
+                        self.audit_page -= 1;
+                        self.loading_message = Some("Loading audit logs...".to_string());
+                        self.fetch_audit_logs().await?;
+                    }
                 }
             }
             AppMode::KeyOperations => {
@@ -1061,15 +1139,56 @@ impl App {
     }
 
     fn draw_audit_viewer(&self, state: &AppState, f: &mut Frame, area: Rect) {
-        let content = Paragraph::new("Audit Log Viewer\n\nView and verify audit logs.")
-            .block(
-                Block::default()
-                    .borders(Borders::ALL)
-                    .title("Audit Log Viewer")
-                    .border_style(state.config.theme.secondary_style()),
-            )
-            .style(state.config.theme.text_style());
-        f.render_widget(content, area);
+        let content = if !state.api_client.is_authenticated() {
+            vec![Row::new(vec![Cell::from("Not authenticated. Please configure authentication in Settings.")])]
+        } else if let Some(loading) = &state.loading_message {
+            vec![Row::new(vec![Cell::from(loading.as_str())])]
+        } else if let Some(logs) = &state.audit_logs {
+            if logs.items.is_empty() {
+                vec![Row::new(vec![Cell::from("No audit logs found.")])]
+            } else {
+                let mut rows = Vec::new();
+                for (i, log) in logs.items.iter().enumerate() {
+                    let style = if i == state.selected_audit_index {
+                        state.config.theme.highlight_style()
+                    } else {
+                        state.config.theme.text_style()
+                    };
+                    rows.push(Row::new(vec![
+                        Cell::from(log.timestamp.clone()).style(style),
+                        Cell::from(log.user.clone()).style(style),
+                        Cell::from(log.action.clone()).style(style),
+                        Cell::from(log.resource.clone()).style(style),
+                    ]));
+                }
+                rows
+            }
+        } else {
+            vec![Row::new(vec![Cell::from("Loading audit logs...")])]
+        };
+
+        let table = Table::new(
+            content,
+            [
+                ratatui::layout::Constraint::Percentage(25),
+                ratatui::layout::Constraint::Percentage(20),
+                ratatui::layout::Constraint::Percentage(20),
+                ratatui::layout::Constraint::Percentage(35),
+            ],
+        )
+        .header(
+            Row::new(vec!["Timestamp", "User", "Action", "Resource"])
+                .style(state.config.theme.header_style())
+                .bottom_margin(1),
+        )
+        .block(
+            Block::default()
+                .borders(Borders::ALL)
+                .title(format!("Audit Logs (Page {})", state.audit_page))
+                .border_style(state.config.theme.secondary_style()),
+        )
+        .highlight_style(state.config.theme.highlight_style());
+        f.render_widget(table, area);
     }
 
     fn draw_settings(&self, state: &AppState, f: &mut Frame, area: Rect) {

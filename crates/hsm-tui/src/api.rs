@@ -272,6 +272,41 @@ impl ApiClient {
         self.handle_response(response).await
     }
 
+    // ===== AUDIT LOGS =====
+
+    /// List audit logs with optional filtering
+    pub async fn list_audit_logs(&self, query: &AuditLogQuery) -> Result<PaginatedAuditLogs> {
+        let mut url = "/api/v1/audit/logs".to_string();
+
+        let mut params = Vec::new();
+        if let Some(page) = query.page {
+            params.push(format!("page={}", page));
+        }
+        if let Some(per_page) = query.per_page {
+            params.push(format!("per_page={}", per_page));
+        }
+        if let Some(user) = &query.user {
+            params.push(format!("user={}", user));
+        }
+        if let Some(action) = &query.action {
+            params.push(format!("action={}", action));
+        }
+        if let Some(from) = &query.from {
+            params.push(format!("from={}", from));
+        }
+        if let Some(to) = &query.to {
+            params.push(format!("to={}", to));
+        }
+
+        if !params.is_empty() {
+            url.push('?');
+            url.push_str(&params.join("&"));
+        }
+
+        let response = self.authenticated_request(reqwest::Method::GET, &url).send().await?;
+        self.handle_response(response).await
+    }
+
     // ===== HEALTH CHECK =====
 
     /// Check server health
@@ -380,6 +415,37 @@ pub struct ApprovalResponse {
     pub created_at: String,
     pub approved_by: Option<String>,
     pub approved_at: Option<String>,
+}
+
+#[derive(Debug, Serialize)]
+pub struct AuditLogQuery {
+    pub page: Option<u32>,
+    pub per_page: Option<u32>,
+    pub user: Option<String>,
+    pub action: Option<String>,
+    pub from: Option<String>,
+    pub to: Option<String>,
+}
+
+#[derive(Debug, Deserialize)]
+pub struct PaginatedAuditLogs {
+    pub items: Vec<AuditLogEntry>,
+    pub total: usize,
+    pub page: u32,
+    pub per_page: u32,
+    pub has_more: bool,
+}
+
+#[derive(Debug, Deserialize)]
+pub struct AuditLogEntry {
+    pub id: String,
+    pub timestamp: String,
+    pub user: String,
+    pub action: String,
+    pub resource: String,
+    pub details: serde_json::Value,
+    pub ip_address: Option<String>,
+    pub user_agent: Option<String>,
 }
 
 #[derive(Debug, Deserialize)]
