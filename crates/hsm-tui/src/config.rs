@@ -23,6 +23,23 @@ pub struct AppConfig {
     pub auto_refresh_interval: u64,
     /// Enable vim key bindings
     pub vim_mode: bool,
+    /// Authentication settings
+    pub auth: AuthConfig,
+}
+
+/// Authentication configuration
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct AuthConfig {
+    /// JWT authentication token
+    pub token: Option<String>,
+    /// Server endpoint URL
+    pub server_endpoint: String,
+    /// Path to client certificate for mTLS
+    pub client_cert_path: Option<String>,
+    /// Path to client private key for mTLS
+    pub client_key_path: Option<String>,
+    /// Path to CA bundle
+    pub ca_bundle_path: Option<String>,
 }
 
 impl Default for AppConfig {
@@ -33,6 +50,19 @@ impl Default for AppConfig {
             default_page_size: 50,
             auto_refresh_interval: 30,
             vim_mode: false,
+            auth: AuthConfig::default(),
+        }
+    }
+}
+
+impl Default for AuthConfig {
+    fn default() -> Self {
+        Self {
+            token: None,
+            server_endpoint: "https://localhost:8443".to_string(),
+            client_cert_path: None,
+            client_key_path: None,
+            ca_bundle_path: None,
         }
     }
 }

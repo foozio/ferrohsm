@@ -6,7 +6,14 @@
 
 use crate::ui::input::{KeyAction, KeyBindings};
 use anyhow::Result;
-use crokey::{crossterm::event::{self, Event, KeyEvent}, KeyCombination};
+use crokey::{crossterm::event::{self, Event, KeyEvent, KeyCode}, KeyCombination};
+
+/// Event result from the event loop
+#[derive(Debug, Clone)]
+pub enum EventResult {
+    Action(KeyAction),
+    Char(char),
+}
 
 /// Event handler for the application
 #[derive(Debug)]
@@ -60,12 +67,14 @@ impl EventLoop {
     }
 
     /// Get the next event
-    pub fn next_event(&self) -> Result<Option<KeyAction>> {
+    pub fn next_event(&self) -> Result<Option<EventResult>> {
         loop {
             match event::read()? {
                 Event::Key(key_event) => {
                     if let Some(action) = self.handler.handle_key_event(key_event) {
-                        return Ok(Some(action));
+                        return Ok(Some(EventResult::Action(action)));
+                    } else if let KeyCode::Char(c) = key_event.code {
+                        return Ok(Some(EventResult::Char(c)));
                     }
                 }
                 Event::Resize(_, _) => {
