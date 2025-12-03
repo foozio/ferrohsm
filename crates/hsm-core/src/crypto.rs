@@ -17,14 +17,21 @@ use ml_dsa::{
     MlDsa44, MlDsa65, MlDsa87,
     signature::{SignatureEncoding, Signer, Verifier},
 };
-use p256::ecdsa::SigningKey as P256SigningKey;
-use p384::ecdsa::SigningKey as P384SigningKey;
+use p256::elliptic_curve::sec1::ToEncodedPoint;
+use p256::{
+    PublicKey as P256PublicKey, SecretKey as P256SecretKey,
+    ecdsa::{SigningKey as P256SigningKey, VerifyingKey as P256VerifyingKey},
+};
+use p384::{
+    PublicKey as P384PublicKey, SecretKey as P384SecretKey,
+    ecdsa::{SigningKey as P384SigningKey, VerifyingKey as P384VerifyingKey},
+};
 use pkcs8::spki::SubjectPublicKeyInfo;
 use pkcs8::{
-    DecodePublicKey, EncodePrivateKey, EncodePublicKey, LineEnding, PrivateKeyInfo,
+    DecodePrivateKey, DecodePublicKey, EncodePrivateKey, EncodePublicKey, LineEnding,
+    PrivateKeyInfo,
     der::{Decode, EncodePem},
 };
-use sec1::DecodeEcPrivateKey;
 use serde::{Deserialize, Serialize};
 use sha2::Sha256;
 use uuid::Uuid;
@@ -70,9 +77,19 @@ fn unpack_post_quantum_material(material: KeyMaterial) -> HsmResult<(Vec<u8>, Ve
 #[cfg(feature = "pqc")]
 fn mlkem_level_from_label(label: &str) -> HsmResult<MlKemSecurityLevel> {
     match label {
-        "ML-KEM-512" => Ok(MlKemSecurityLevel::MlKem512),
-        "ML-KEM-768" => Ok(MlKemSecurityLevel::MlKem768),
-        "ML-KEM-1024" => Ok(MlKemSecurityLevel::MlKem1024),
+        "ML-KEM-512" | "MlKem512" => Ok(MlKemSecurityLevel::MlKem512),
+        "ML-KEM-768" | "MlKem768" => Ok(MlKemSecurityLevel::MlKem768),
+        "ML-KEM-1024" | "MlKem1024" => Ok(MlKemSecurityLevel::MlKem1024),
+        other => Err(HsmError::UnsupportedAlgorithm(other.to_string())),
+    }
+}
+
+#[cfg(feature = "pqc")]
+fn mldsa_level_from_label(label: &str) -> HsmResult<MlDsaSecurityLevel> {
+    match label {
+        "ML-DSA-44" | "MlDsa44" => Ok(MlDsaSecurityLevel::MlDsa44),
+        "ML-DSA-65" | "MlDsa65" => Ok(MlDsaSecurityLevel::MlDsa65),
+        "ML-DSA-87" | "MlDsa87" => Ok(MlDsaSecurityLevel::MlDsa87),
         other => Err(HsmError::UnsupportedAlgorithm(other.to_string())),
     }
 }
@@ -651,14 +668,29 @@ impl CryptoEngine {
                         .map_err(HsmError::crypto)?;
                     Ok(KeyOperationResult::Signature { signature })
                 }
-                KeyMaterial::Ec { private_pem, .. } => {
-                    let signing_key = p256::ecdsa::SigningKey::from_sec1_pem(private_pem)
-                        .map_err(HsmError::crypto)?;
-                    let signature: p256::ecdsa::Signature = signing_key.sign(&payload);
-                    Ok(KeyOperationResult::Signature {
-                        signature: signature.to_vec(),
-                    })
-                }
+                KeyMaterial::Ec {
+                    curve, private_pem, ..
+                } => match curve {
+                    KeyMaterialType::EcP256 => {
+                        let signing_key = P256SigningKey::from_pkcs8_pem(private_pem)
+                            .map_err(HsmError::crypto)?;
+                        let signature: p256::ecdsa::Signature = signing_key.sign(&payload);
+                        Ok(KeyOperationResult::Signature {
+                            signature: signature.to_vec(),
+                        })
+                    }
+                    KeyMaterialType::EcP384 => {
+                        let signing_key = P384SigningKey::from_pkcs8_pem(private_pem)
+                            .map_err(HsmError::crypto)?;
+                        let signature: p384::ecdsa::Signature = signing_key.sign(&payload);
+                        Ok(KeyOperationResult::Signature {
+                            signature: signature.to_vec(),
+                        })
+                    }
+                    _ => Err(HsmError::UnsupportedAlgorithm(
+                        "Unsupported EC curve for signing".to_string(),
+                    )),
+                },
                 KeyMaterial::PostQuantum {
                     private_key,
                     algorithm,
@@ -702,30 +734,30 @@ impl CryptoEngine {
                 }
 
                 KeyMaterial::Hybrid {
+                    ec_curve,
                     ec_private_pem,
+                    pq_algorithm,
                     pq_private_key,
                     ..
-                } => match (ec_private_pem, pq_private_key) {
-                    (Some(private_pem), _) => {
-                        let signing_key = p256::ecdsa::SigningKey::from_sec1_pem(private_pem)
-                            .map_err(HsmError::crypto)?;
-                        let signature: p256::ecdsa::Signature = signing_key.sign(&payload);
-                        Ok(KeyOperationResult::Signature {
-                            signature: signature.to_vec(),
-                        })
-                    }
-                    (_, Some(private_key)) => {
-                        let signature = {
-                            let pki = PrivateKeyInfo::from_der(private_key.as_ref())
-                                .map_err(|e| HsmError::crypto(e.to_string()))?;
-                            let signing_key = <ml_dsa::SigningKey<MlDsa44>>::try_from(pki)
-                                .map_err(|e| HsmError::crypto(e.to_string()))?;
-                            signing_key.sign(&payload).to_vec()
-                        };
-                        Ok(KeyOperationResult::Signature { signature })
-                    }
-                    _ => Err(HsmError::MissingPrivateKey),
-                },
+                } => {
+                    let ec_private_pem =
+                        ec_private_pem.as_ref().ok_or(HsmError::MissingPrivateKey)?;
+                    let pq_private_key =
+                        pq_private_key.as_ref().ok_or(HsmError::MissingPrivateKey)?;
+                    let ec_private_key = ec_private_scalar(ec_private_pem, ec_curve)?;
+
+                    let provider = OqsCryptoProvider::new();
+                    let pq_level = mldsa_level_from_label(pq_algorithm)?;
+
+                    let signature = provider.hybrid_ecdsa_mldsa_sign(
+                        &payload,
+                        &ec_private_key,
+                        pq_private_key,
+                        *ec_curve,
+                        pq_level,
+                    )?;
+                    Ok(KeyOperationResult::Signature { signature })
+                }
                 _ => Err(HsmError::UnsupportedAlgorithm(
                     "Unsupported signing algorithm".to_string(),
                 )),
@@ -749,13 +781,26 @@ impl CryptoEngine {
                     let valid = public_key.verify(&payload, &signature).is_ok();
                     Ok(KeyOperationResult::Verified { valid })
                 }
-                KeyMaterial::Ec { public_pem, .. } => {
-                    let verifying_key =
-                        p256::ecdsa::VerifyingKey::from_public_key_der(public_pem.as_bytes())
-                            .map_err(HsmError::crypto)?;
-                    let signature = p256::ecdsa::Signature::from_slice(&signature)
-                        .map_err(|e| HsmError::crypto(e.to_string()))?;
-                    let valid = verifying_key.verify(&payload, &signature).is_ok();
+                KeyMaterial::Ec {
+                    curve, public_pem, ..
+                } => {
+                    let valid = match curve {
+                        KeyMaterialType::EcP256 => {
+                            let verifying_key = P256VerifyingKey::from_public_key_pem(public_pem)
+                                .map_err(HsmError::crypto)?;
+                            let signature = p256::ecdsa::Signature::from_slice(&signature)
+                                .map_err(|e| HsmError::crypto(e.to_string()))?;
+                            verifying_key.verify(&payload, &signature).is_ok()
+                        }
+                        KeyMaterialType::EcP384 => {
+                            let verifying_key = P384VerifyingKey::from_public_key_pem(public_pem)
+                                .map_err(HsmError::crypto)?;
+                            let signature = p384::ecdsa::Signature::from_slice(&signature)
+                                .map_err(|e| HsmError::crypto(e.to_string()))?;
+                            verifying_key.verify(&payload, &signature).is_ok()
+                        }
+                        _ => false,
+                    };
                     Ok(KeyOperationResult::Verified { valid })
                 }
                 KeyMaterial::PostQuantum {
@@ -800,36 +845,25 @@ impl CryptoEngine {
                     Ok(KeyOperationResult::Verified { valid })
                 }
                 KeyMaterial::Hybrid {
+                    ec_curve,
                     ec_public_pem,
+                    pq_algorithm,
                     pq_public_key,
                     ..
                 } => {
-                    // Try ECDSA verification first
-                    let ecdsa_result =
-                        p256::ecdsa::VerifyingKey::from_public_key_der(ec_public_pem.as_bytes())
-                            .map_err(|e| HsmError::crypto(e.to_string()))
-                            .and_then(|verifying_key| {
-                                p256::ecdsa::Signature::from_slice(&signature)
-                                    .map_err(|e| HsmError::crypto(e.to_string()))
-                                    .map(|sig| verifying_key.verify(&payload, &sig).is_ok())
-                            })
-                            .unwrap_or(false);
+                    let provider = OqsCryptoProvider::new();
+                    let pq_level = mldsa_level_from_label(pq_algorithm)?;
+                    let ec_public_key = ec_public_sec1_bytes(ec_public_pem, ec_curve)?;
 
-                    if ecdsa_result {
-                        Ok(KeyOperationResult::Verified { valid: true })
-                    } else {
-                        // Try ML-DSA verification
-                        let valid = {
-                            let spki = SubjectPublicKeyInfo::from_der(pq_public_key.as_ref())
-                                .map_err(|e| HsmError::crypto(e.to_string()))?;
-                            let verifying_key = <ml_dsa::VerifyingKey<MlDsa44>>::try_from(spki)
-                                .map_err(|e| HsmError::crypto(e.to_string()))?;
-                            let signature = ml_dsa::Signature::try_from(signature.as_ref())
-                                .map_err(|e| HsmError::crypto(e.to_string()))?;
-                            verifying_key.verify(&payload, &signature).is_ok()
-                        };
-                        Ok(KeyOperationResult::Verified { valid })
-                    }
+                    let valid = provider.hybrid_ecdsa_mldsa_verify(
+                        &payload,
+                        &signature,
+                        &ec_public_key,
+                        pq_public_key,
+                        *ec_curve,
+                        pq_level,
+                    )?;
+                    Ok(KeyOperationResult::Verified { valid })
                 }
                 _ => Err(HsmError::UnsupportedAlgorithm(
                     "Unsupported verification algorithm".to_string(),
@@ -992,10 +1026,9 @@ impl CryptoEngine {
                     Err(pqc_disabled_error())
                 }
             }
-            CryptoOperation::HybridEncrypt { plaintext } => {
+            CryptoOperation::HybridEncrypt { plaintext: _ } => {
                 #[cfg(feature = "pqc")]
                 {
-                    let _ = &plaintext;
                     match material {
                         KeyMaterial::Hybrid {
                             ec_curve,
@@ -1005,48 +1038,19 @@ impl CryptoEngine {
                             ..
                         } => {
                             let provider = OqsCryptoProvider::new();
-                            if pq_algorithm.starts_with("ML-KEM") {
-                                let security_level = mlkem_level_from_label(pq_algorithm.as_str())?;
-                                let (kem_ciphertext, shared_secret) = provider
-                                    .mlkem_encapsulate(pq_public_key, security_level)
-                                    .map_err(|e| {
-                                        HsmError::crypto(format!("ML-KEM encapsulate: {e}"))
-                                    })?;
-
-                                let ec_cipher = match ec_curve {
-                                    KeyMaterialType::EcP256 => {
-                                        let verifying =
-                                            p256::ecdsa::VerifyingKey::from_public_key_pem(ec_public_pem)
-                                                .map_err(HsmError::crypto)?;
-                                        verifying.to_encoded_point(false).as_bytes().to_vec()
-                                    }
-                                    KeyMaterialType::EcP384 => {
-                                        let verifying =
-                                            p384::ecdsa::VerifyingKey::from_public_key_pem(ec_public_pem)
-                                                .map_err(HsmError::crypto)?;
-                                        verifying.to_encoded_point(false).as_bytes().to_vec()
-                                    }
-                                    _ => {
-                                        return Err(HsmError::Crypto(
-                                            "Unsupported EC curve for hybrid encryption".into(),
-                                        ));
-                                    }
-                                };
-
-                                let mut hybrid_ciphertext = Vec::new();
-                                hybrid_ciphertext.extend_from_slice(&kem_ciphertext);
-                                hybrid_ciphertext.extend_from_slice(&ec_cipher);
-                                hybrid_ciphertext.extend_from_slice(&shared_secret);
-
-                                Ok(KeyOperationResult::HybridEncrypted {
-                                    ciphertext: hybrid_ciphertext,
-                                    ephemeral_key: shared_secret,
-                                })
-                            } else {
-                                Err(HsmError::Crypto(
-                                    "Hybrid encryption not supported for this PQ algorithm".into(),
-                                ))
-                            }
+                            let pq_level = mlkem_level_from_label(pq_algorithm)?;
+                            let ec_public_key = ec_public_sec1_bytes(ec_public_pem, ec_curve)?;
+                            let (ciphertext, shared_secret) = provider
+                                .hybrid_ecdh_mlkem_encapsulate(
+                                    &ec_public_key,
+                                    pq_public_key,
+                                    *ec_curve,
+                                    pq_level,
+                                )?;
+                            Ok(KeyOperationResult::HybridEncrypted {
+                                ciphertext,
+                                ephemeral_key: shared_secret,
+                            })
                         }
                         _ => Err(HsmError::Crypto(
                             "Hybrid encryption requires hybrid key material".into(),
@@ -1059,40 +1063,36 @@ impl CryptoEngine {
                     Err(pqc_disabled_error())
                 }
             }
-            CryptoOperation::HybridDecrypt {
-                ciphertext,
-                ephemeral_key,
-            } => {
+            CryptoOperation::HybridDecrypt { ciphertext, .. } => {
                 #[cfg(feature = "pqc")]
                 {
                     match material {
                         KeyMaterial::Hybrid {
+                            ec_curve,
+                            ec_private_pem,
                             pq_algorithm,
-                            pq_private_key: Some(pq_private_key),
+                            pq_private_key,
                             ..
                         } => {
+                            let ec_private_pem =
+                                ec_private_pem.as_ref().ok_or(HsmError::MissingPrivateKey)?;
+                            let pq_private_key =
+                                pq_private_key.as_ref().ok_or(HsmError::MissingPrivateKey)?;
+                            let ec_private_key = ec_private_scalar(ec_private_pem, ec_curve)?;
+
                             let provider = OqsCryptoProvider::new();
-                            if pq_algorithm.starts_with("ML-KEM") {
-                                let security_level = mlkem_level_from_label(pq_algorithm.as_str())?;
-                                let shared_secret = provider
-                                    .mlkem_decapsulate(&ciphertext, pq_private_key, security_level)
-                                    .map_err(|e| {
-                                        HsmError::crypto(format!("ML-KEM decapsulate: {e}"))
-                                    })?;
-                                if shared_secret == ephemeral_key {
-                                    Ok(KeyOperationResult::HybridDecrypted {
-                                        plaintext: shared_secret,
-                                    })
-                                } else {
-                                    Err(HsmError::Crypto(
-                                        "Hybrid decryption failed: shared secret mismatch".into(),
-                                    ))
-                                }
-                            } else {
-                                Err(HsmError::Crypto(
-                                    "Hybrid decryption not supported for this PQ algorithm".into(),
-                                ))
-                            }
+                            let pq_level = mlkem_level_from_label(pq_algorithm)?;
+
+                            let shared_secret = provider.hybrid_ecdh_mlkem_decapsulate(
+                                &ciphertext,
+                                &ec_private_key,
+                                pq_private_key,
+                                *ec_curve,
+                                pq_level,
+                            )?;
+                            Ok(KeyOperationResult::HybridDecrypted {
+                                plaintext: shared_secret,
+                            })
                         }
                         _ => Err(HsmError::Crypto(
                             "Hybrid decryption requires hybrid key material".into(),
@@ -1102,7 +1102,6 @@ impl CryptoEngine {
                 #[cfg(not(feature = "pqc"))]
                 {
                     let _ = ciphertext;
-                    let _ = ephemeral_key;
                     Err(pqc_disabled_error())
                 }
             }
@@ -1197,24 +1196,32 @@ impl CryptoEngine {
             | KeyMaterialType::SlhDsa192f
             | KeyMaterialType::SlhDsa192s
             | KeyMaterialType::SlhDsa256f
-            | KeyMaterialType::SlhDsa256s => Ok(KeyMaterial::PostQuantum {
-                algorithm: material_type.to_string(),
-                private_key: Some(bytes.to_vec()),
-                public_key: vec![], // Public key is derived from private key
-            }),
+            | KeyMaterialType::SlhDsa256s => {
+                let algorithm = material_type
+                    .algorithm_label()
+                    .ok_or_else(|| HsmError::UnsupportedAlgorithm(material_type.to_string()))?;
+                Ok(KeyMaterial::PostQuantum {
+                    algorithm: algorithm.to_string(),
+                    private_key: Some(bytes.to_vec()),
+                    public_key: vec![], // Public key is derived from private key
+                })
+            }
             KeyMaterialType::HybridP256MlKem512
             | KeyMaterialType::HybridP256MlKem768
             | KeyMaterialType::HybridP384MlKem1024
             | KeyMaterialType::HybridP256MlDsa44
             | KeyMaterialType::HybridP256MlDsa65
             | KeyMaterialType::HybridP384MlDsa87 => {
+                let (ec_curve, pq_algorithm) = material_type
+                    .hybrid_components()
+                    .ok_or_else(|| HsmError::UnsupportedAlgorithm(material_type.to_string()))?;
                 let (ec_private_pem, ec_public_pem, pqc_private_key, pqc_public_key) =
                     serde_json::from_slice(bytes).map_err(HsmError::crypto)?;
                 Ok(KeyMaterial::Hybrid {
-                    ec_curve: KeyMaterialType::EcP256,
+                    ec_curve,
                     ec_private_pem: Some(ec_private_pem),
                     ec_public_pem,
-                    pq_algorithm: material_type.to_string(), // This needs to be derived from the material_type
+                    pq_algorithm: pq_algorithm.to_string(),
                     pq_public_key: pqc_public_key,
                     pq_private_key: Some(pqc_private_key),
                 })
@@ -1226,6 +1233,38 @@ impl CryptoEngine {
         let mut nonce = vec![0u8; 12];
         OsRng.fill_bytes(&mut nonce);
         nonce
+    }
+}
+
+fn ec_public_sec1_bytes(pem: &str, curve: &KeyMaterialType) -> HsmResult<Vec<u8>> {
+    match curve {
+        KeyMaterialType::EcP256 => {
+            let pk = P256PublicKey::from_public_key_pem(pem).map_err(HsmError::crypto)?;
+            Ok(pk.to_encoded_point(false).as_bytes().to_vec())
+        }
+        KeyMaterialType::EcP384 => {
+            let pk = P384PublicKey::from_public_key_pem(pem).map_err(HsmError::crypto)?;
+            Ok(pk.to_encoded_point(false).as_bytes().to_vec())
+        }
+        _ => Err(HsmError::UnsupportedAlgorithm(
+            "Unsupported EC curve for hybrid operations".to_string(),
+        )),
+    }
+}
+
+fn ec_private_scalar(pem: &str, curve: &KeyMaterialType) -> HsmResult<Vec<u8>> {
+    match curve {
+        KeyMaterialType::EcP256 => {
+            let sk = P256SecretKey::from_pkcs8_pem(pem).map_err(HsmError::crypto)?;
+            Ok(sk.to_bytes().to_vec())
+        }
+        KeyMaterialType::EcP384 => {
+            let sk = P384SecretKey::from_pkcs8_pem(pem).map_err(HsmError::crypto)?;
+            Ok(sk.to_bytes().to_vec())
+        }
+        _ => Err(HsmError::UnsupportedAlgorithm(
+            "Unsupported EC curve for hybrid operations".to_string(),
+        )),
     }
 }
 
@@ -1283,7 +1322,11 @@ pub fn sign_audit_record(key: &[u8], record: &crate::audit::AuditRecord) -> Stri
     hex::encode(tag)
 }
 
-pub fn verify_audit_signature(key: &[u8], record: &crate::audit::AuditRecord, signature: &str) -> bool {
+pub fn verify_audit_signature(
+    key: &[u8],
+    record: &crate::audit::AuditRecord,
+    signature: &str,
+) -> bool {
     let expected = sign_audit_record(key, record);
     expected == signature
 }

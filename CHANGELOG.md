@@ -1,24 +1,14 @@
 # FerroHSM 0.4.0
 
 ## Highlights
-- Added comprehensive post-quantum cryptography (PQC) support with NIST-standardized algorithms:
-  - ML-KEM (formerly Kyber) at security levels 512, 768, and 1024
-  - ML-DSA (formerly Dilithium) at security levels 65, 87, and 135
-  - SLH-DSA (formerly SPHINCS+) hash-based signatures
-- Implemented hybrid cryptography combining traditional and post-quantum algorithms:
-  - P-256 + ML-KEM-768
-  - P-384 + ML-KEM-1024
-  - P-256 + ML-DSA variants
-- Enhanced policy controls for PQC operations with configurable dual-control requirements and role-based restrictions
-- **PKCS#11 Interface**: Full PKCS#11 v2.40 compliant interface for legacy application compatibility
-- **Enhanced TUI**: Improved text-based user interface with menu-based navigation
-- **Homebrew Distribution**: One-command installation for macOS and Linux users
-- **Comprehensive Documentation**: Complete API reference and user guides for all interfaces
-- Updated SDK examples and test scripts to demonstrate PQC functionality
+- Unified version metadata across all binaries and packaging scripts by deriving values directly from crate definitions.
+- Updated PKCS#11 SLH-DSA variant names and hybrid attribute handling to align with current specifications.
+- Refreshed Homebrew documentation, Linux installer, and automated tests for the 0.4.0 release cadence.
+- Hardened TUI integration tests and CLI workflows to better support headless automation environments.
 
 ## Bug Fixes
-- Fixed compilation errors in the cryptographic core module related to missing braces in match statements
-- Resolved type annotation issues in the signing code path
+- Addressed inconsistent version reporting in the TUI and related tests.
+- Eliminated redundant attribute handling in the PKCS#11 layer and tightened slot metadata copying.
 
 # FerroHSM 0.3.0
 
@@ -76,4 +66,3 @@
 # install locally using the generated formula (for testing)
 brew install --formula ./dist/homebrew/ferrohsm.rb
 ```
-

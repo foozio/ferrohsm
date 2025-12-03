@@ -1,5 +1,14 @@
 use oqs::kem::{self as oqs_kem, Algorithm as KemAlgorithm};
 use oqs::sig::{self as oqs_sig, Algorithm as SigAlgorithm};
+use p256::{
+    PublicKey as P256PublicKey, SecretKey as P256SecretKey,
+    ecdh::diffie_hellman,
+    ecdsa::signature::{Signer, Verifier},
+    elliptic_curve::sec1::ToEncodedPoint,
+};
+use p384::{PublicKey as P384PublicKey, SecretKey as P384SecretKey};
+use rand::rngs::OsRng;
+use sha2::{Digest, Sha256};
 
 use crate::{
     error::{HsmError, HsmResult},
@@ -9,6 +18,12 @@ use crate::{
 
 /// OQS-based implementation of the CryptoProvider trait
 pub struct OqsCryptoProvider;
+
+impl Default for OqsCryptoProvider {
+    fn default() -> Self {
+        Self::new()
+    }
+}
 
 impl OqsCryptoProvider {
     pub fn new() -> Self {
@@ -53,23 +68,23 @@ impl OqsCryptoProvider {
 
     fn slhdsa_algorithm(level: SlhDsaSecurityLevel) -> SigAlgorithm {
         match level {
-            SlhDsaSecurityLevel::SlhDsaSha2128f => SigAlgorithm::SphincsSha2128fSimple,
-            SlhDsaSecurityLevel::SlhDsaSha2128s => SigAlgorithm::SphincsSha2128sSimple,
-            SlhDsaSecurityLevel::SlhDsaSha2192f => SigAlgorithm::SphincsSha2192fSimple,
-            SlhDsaSecurityLevel::SlhDsaSha2192s => SigAlgorithm::SphincsSha2192sSimple,
-            SlhDsaSecurityLevel::SlhDsaSha2256f => SigAlgorithm::SphincsSha2256fSimple,
-            SlhDsaSecurityLevel::SlhDsaSha2256s => SigAlgorithm::SphincsSha2256sSimple,
+            SlhDsaSecurityLevel::SlhDsa128f => SigAlgorithm::SphincsSha2128fSimple,
+            SlhDsaSecurityLevel::SlhDsa128s => SigAlgorithm::SphincsSha2128sSimple,
+            SlhDsaSecurityLevel::SlhDsa192f => SigAlgorithm::SphincsSha2192fSimple,
+            SlhDsaSecurityLevel::SlhDsa192s => SigAlgorithm::SphincsSha2192sSimple,
+            SlhDsaSecurityLevel::SlhDsa256f => SigAlgorithm::SphincsSha2256fSimple,
+            SlhDsaSecurityLevel::SlhDsa256s => SigAlgorithm::SphincsSha2256sSimple,
         }
     }
 
     fn slhdsa_variant(level: SlhDsaSecurityLevel) -> &'static str {
         match level {
-            SlhDsaSecurityLevel::SlhDsaSha2128f => "SHA2-128f",
-            SlhDsaSecurityLevel::SlhDsaSha2128s => "SHA2-128s",
-            SlhDsaSecurityLevel::SlhDsaSha2192f => "SHA2-192f",
-            SlhDsaSecurityLevel::SlhDsaSha2192s => "SHA2-192s",
-            SlhDsaSecurityLevel::SlhDsaSha2256f => "SHA2-256f",
-            SlhDsaSecurityLevel::SlhDsaSha2256s => "SHA2-256s",
+            SlhDsaSecurityLevel::SlhDsa128f => "128f",
+            SlhDsaSecurityLevel::SlhDsa128s => "128s",
+            SlhDsaSecurityLevel::SlhDsa192f => "192f",
+            SlhDsaSecurityLevel::SlhDsa192s => "192s",
+            SlhDsaSecurityLevel::SlhDsa256f => "256f",
+            SlhDsaSecurityLevel::SlhDsa256s => "256s",
         }
     }
 
@@ -279,81 +294,193 @@ impl CryptoProvider for OqsCryptoProvider {
     // Hybrid operations
     fn hybrid_ecdh_mlkem_encapsulate(
         &self,
-        _ec_public_key: &[u8],
+        ec_public_key: &[u8],
         pq_public_key: &[u8],
-        _ec_type: KeyMaterialType,
+        ec_type: KeyMaterialType,
         pq_level: MlKemSecurityLevel,
     ) -> HsmResult<(Vec<u8>, Vec<u8>)> {
-        // First perform ML-KEM encapsulation
+        // 1. Generate an ephemeral EC key pair
+        let (ephemeral_public_key, ec_shared) = match ec_type {
+            KeyMaterialType::EcP256 => {
+                let ephemeral_sk = P256SecretKey::random(&mut OsRng);
+                let ephemeral_pk = ephemeral_sk.public_key();
+                let peer_pk = P256PublicKey::from_sec1_bytes(ec_public_key)
+                    .map_err(|e| HsmError::crypto(format!("invalid P256 public key: {e}")))?;
+                let shared = diffie_hellman(ephemeral_sk.to_nonzero_scalar(), peer_pk.as_affine());
+                (
+                    ephemeral_pk.to_encoded_point(false).as_bytes().to_vec(),
+                    shared.raw_secret_bytes().to_vec(),
+                )
+            }
+            KeyMaterialType::EcP384 => {
+                let ephemeral_sk = P384SecretKey::random(&mut OsRng);
+                let ephemeral_pk = ephemeral_sk.public_key();
+                let peer_pk = P384PublicKey::from_sec1_bytes(ec_public_key)
+                    .map_err(|e| HsmError::crypto(format!("invalid P384 public key: {e}")))?;
+                let shared = diffie_hellman(ephemeral_sk.to_nonzero_scalar(), peer_pk.as_affine());
+                (
+                    ephemeral_pk.to_encoded_point(false).as_bytes().to_vec(),
+                    shared.raw_secret_bytes().to_vec(),
+                )
+            }
+            _ => return Err(HsmError::unsupported_algorithm("EC type for hybrid KEM")),
+        };
+
+        // 2. Perform ML-KEM encapsulation
         let (mlkem_ciphertext, mlkem_shared) = self.mlkem_encapsulate(pq_public_key, pq_level)?;
 
-        // For a real implementation, we would also perform ECDH here and combine the shared secrets
-        // This is a simplified version that just returns the ML-KEM result
-        // In a complete implementation, we would:
-        // 1. Generate an ephemeral EC key pair
-        // 2. Perform ECDH with the provided EC public key
         // 3. Combine the ECDH shared secret with the ML-KEM shared secret
-        // 4. Return the combined ciphertext (EC public key + ML-KEM ciphertext)
+        let mut combined_secret = Vec::new();
+        combined_secret.extend_from_slice(&ec_shared);
+        combined_secret.extend_from_slice(&mlkem_shared);
+        let mut hasher = Sha256::new();
+        hasher.update(&combined_secret);
+        let final_shared_secret = hasher.finalize().to_vec();
 
-        Ok((mlkem_ciphertext, mlkem_shared))
+        // 4. Return the combined ciphertext (EC public key + ML-KEM ciphertext)
+        let mut combined_ciphertext = Vec::new();
+        combined_ciphertext.extend_from_slice(&ephemeral_public_key);
+        combined_ciphertext.extend_from_slice(&mlkem_ciphertext);
+
+        Ok((combined_ciphertext, final_shared_secret))
     }
 
     fn hybrid_ecdh_mlkem_decapsulate(
         &self,
         ciphertext: &[u8],
-        _ec_private_key: &[u8],
+        ec_private_key: &[u8],
         pq_private_key: &[u8],
-        _ec_type: KeyMaterialType,
+        ec_type: KeyMaterialType,
         pq_level: MlKemSecurityLevel,
     ) -> HsmResult<Vec<u8>> {
-        // In a complete implementation, we would:
         // 1. Extract the EC public key and ML-KEM ciphertext from the combined ciphertext
+        let (ephemeral_pk_bytes, mlkem_ciphertext) = match ec_type {
+            KeyMaterialType::EcP256 => ciphertext.split_at(65),
+            KeyMaterialType::EcP384 => ciphertext.split_at(97),
+            _ => return Err(HsmError::unsupported_algorithm("EC type for hybrid KEM")),
+        };
+
         // 2. Perform ECDH with the EC private key and the ephemeral EC public key
+        let ec_shared = match ec_type {
+            KeyMaterialType::EcP256 => {
+                let ephemeral_pk = P256PublicKey::from_sec1_bytes(ephemeral_pk_bytes)
+                    .map_err(|e| HsmError::crypto(format!("invalid ephemeral P256 key: {e}")))?;
+                let sk = P256SecretKey::from_slice(ec_private_key)
+                    .map_err(|e| HsmError::crypto(format!("invalid P256 private key: {e}")))?;
+                let shared = diffie_hellman(sk.to_nonzero_scalar(), ephemeral_pk.as_affine());
+                shared.raw_secret_bytes().to_vec()
+            }
+            KeyMaterialType::EcP384 => {
+                let ephemeral_pk = P384PublicKey::from_sec1_bytes(ephemeral_pk_bytes)
+                    .map_err(|e| HsmError::crypto(format!("invalid ephemeral P384 key: {e}")))?;
+                let sk = P384SecretKey::from_slice(ec_private_key)
+                    .map_err(|e| HsmError::crypto(format!("invalid P384 private key: {e}")))?;
+                let shared = diffie_hellman(sk.to_nonzero_scalar(), ephemeral_pk.as_affine());
+                shared.raw_secret_bytes().to_vec()
+            }
+            _ => return Err(HsmError::unsupported_algorithm("EC type for hybrid KEM")),
+        };
+
         // 3. Perform ML-KEM decapsulation
+        let mlkem_shared = self.mlkem_decapsulate(mlkem_ciphertext, pq_private_key, pq_level)?;
+
         // 4. Combine the shared secrets
+        let mut combined_secret = Vec::new();
+        combined_secret.extend_from_slice(&ec_shared);
+        combined_secret.extend_from_slice(&mlkem_shared);
+        let mut hasher = Sha256::new();
+        hasher.update(&combined_secret);
+        let final_shared_secret = hasher.finalize().to_vec();
 
-        // This is a simplified version that just performs ML-KEM decapsulation
-        let shared_secret = self.mlkem_decapsulate(ciphertext, pq_private_key, pq_level)?;
-
-        Ok(shared_secret)
+        Ok(final_shared_secret)
     }
 
     fn hybrid_ecdsa_mldsa_sign(
         &self,
         message: &[u8],
-        _ec_private_key: &[u8],
+        ec_private_key: &[u8],
         pq_private_key: &[u8],
-        _ec_type: KeyMaterialType,
+        ec_type: KeyMaterialType,
         pq_level: MlDsaSecurityLevel,
     ) -> HsmResult<Vec<u8>> {
-        // For a complete hybrid signature implementation, we would:
         // 1. Sign the message with ECDSA
+        let ec_signature = match ec_type {
+            KeyMaterialType::EcP256 => {
+                let sk = P256SecretKey::from_slice(ec_private_key)
+                    .map_err(|e| HsmError::crypto(format!("invalid p256 private key: {e}")))?;
+                let signing_key: p256::ecdsa::SigningKey = sk.into();
+                let signature: p256::ecdsa::Signature = signing_key.sign(message);
+                signature.to_vec()
+            }
+            KeyMaterialType::EcP384 => {
+                let sk = P384SecretKey::from_slice(ec_private_key)
+                    .map_err(|e| HsmError::crypto(format!("invalid p384 private key: {e}")))?;
+                let signing_key: p384::ecdsa::SigningKey = sk.into();
+                let signature: p384::ecdsa::Signature = signing_key.sign(message);
+                signature.to_vec()
+            }
+            _ => {
+                return Err(HsmError::unsupported_algorithm(
+                    "EC type for hybrid signing",
+                ));
+            }
+        };
+
         // 2. Sign the message with ML-DSA
+        let pq_signature = self.mldsa_sign(message, pq_private_key, pq_level)?;
+
         // 3. Combine the signatures
+        let mut combined_signature = Vec::new();
+        combined_signature.extend_from_slice(&ec_signature);
+        combined_signature.extend_from_slice(&pq_signature);
 
-        // This is a simplified version that just performs ML-DSA signing
-        let signature = self.mldsa_sign(message, pq_private_key, pq_level)?;
-
-        Ok(signature)
+        Ok(combined_signature)
     }
 
     fn hybrid_ecdsa_mldsa_verify(
         &self,
         message: &[u8],
         signature: &[u8],
-        _ec_public_key: &[u8],
+        ec_public_key: &[u8],
         pq_public_key: &[u8],
-        _ec_type: KeyMaterialType,
+        ec_type: KeyMaterialType,
         pq_level: MlDsaSecurityLevel,
     ) -> HsmResult<bool> {
-        // For a complete hybrid verification implementation, we would:
         // 1. Extract the ECDSA and ML-DSA signatures
+        let (ec_sig, pq_sig) = match ec_type {
+            KeyMaterialType::EcP256 => signature.split_at(64),
+            KeyMaterialType::EcP384 => signature.split_at(96),
+            _ => {
+                return Err(HsmError::unsupported_algorithm(
+                    "EC type for hybrid verification",
+                ));
+            }
+        };
+
         // 2. Verify both signatures
+        let ec_valid = match ec_type {
+            KeyMaterialType::EcP256 => {
+                let pk = P256PublicKey::from_sec1_bytes(ec_public_key)
+                    .map_err(|e| HsmError::crypto(format!("invalid p256 public key: {e}")))?;
+                let verifying_key: p256::ecdsa::VerifyingKey = pk.into();
+                let signature = p256::ecdsa::Signature::from_slice(ec_sig)
+                    .map_err(|e| HsmError::crypto(format!("invalid p256 signature: {e}")))?;
+                verifying_key.verify(message, &signature).is_ok()
+            }
+            KeyMaterialType::EcP384 => {
+                let pk = P384PublicKey::from_sec1_bytes(ec_public_key)
+                    .map_err(|e| HsmError::crypto(format!("invalid p384 public key: {e}")))?;
+                let verifying_key: p384::ecdsa::VerifyingKey = pk.into();
+                let signature = p384::ecdsa::Signature::from_slice(ec_sig)
+                    .map_err(|e| HsmError::crypto(format!("invalid p384 signature: {e}")))?;
+                verifying_key.verify(message, &signature).is_ok()
+            }
+            _ => false,
+        };
+
+        let pq_valid = self.mldsa_verify(message, pq_sig, pq_public_key, pq_level)?;
+
         // 3. Return true only if both verifications succeed
-
-        // This is a simplified version that just performs ML-DSA verification
-        let valid = self.mldsa_verify(message, signature, pq_public_key, pq_level)?;
-
-        Ok(valid)
+        Ok(ec_valid && pq_valid)
     }
 }

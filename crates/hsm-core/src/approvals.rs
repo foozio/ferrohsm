@@ -23,6 +23,8 @@ pub struct ApprovalRecord {
     pub created_at: OffsetDateTime,
     pub approved_by: Option<String>,
     pub approved_at: Option<OffsetDateTime>,
+    pub quorum_size: u8,
+    pub approvers: Vec<String>,
 }
 
 impl ApprovalRecord {
@@ -41,11 +43,13 @@ impl ApprovalRecord {
             created_at: OffsetDateTime::now_utc(),
             approved_by: None,
             approved_at: None,
+            quorum_size: 1,
+            approvers: Vec::new(),
         }
     }
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 pub struct PendingApprovalInfo {
     pub id: Uuid,
     pub action: Action,
@@ -54,6 +58,8 @@ pub struct PendingApprovalInfo {
     pub created_at: OffsetDateTime,
     pub approved_by: Option<String>,
     pub approved_at: Option<OffsetDateTime>,
+    pub quorum_size: u8,
+    pub approvers: Vec<String>,
 }
 
 pub trait ApprovalStore: Send + Sync {
@@ -181,7 +187,9 @@ impl SqliteApprovalStore {
                 requester TEXT NOT NULL,
                 created_at TEXT NOT NULL,
                 approved_by TEXT,
-                approved_at TEXT
+                approved_at TEXT,
+                quorum_size INTEGER NOT NULL DEFAULT 1,
+                approvers TEXT NOT NULL DEFAULT '[]'
             );
             CREATE INDEX IF NOT EXISTS idx_approvals_action_subject ON approvals(action, subject);
             CREATE INDEX IF NOT EXISTS idx_approvals_created ON approvals(created_at);
@@ -201,6 +209,7 @@ impl SqliteApprovalStore {
         let conn = self.conn.lock();
         let action_raw = serde_json::to_string(&record.action).map_err(HsmError::storage)?;
         let tags_raw = Self::serialize_tags(&record.policy_tags)?;
+        let approvers_raw = serde_json::to_string(&record.approvers).map_err(HsmError::storage)?;
         let created_at = record
             .created_at
             .format(&Rfc3339)
@@ -211,8 +220,8 @@ impl SqliteApprovalStore {
             .transpose()?;
         conn.execute(
             "INSERT INTO approvals (
-                id, action, subject, policy_tags, requester, created_at, approved_by, approved_at
-            ) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8)
+                id, action, subject, policy_tags, requester, created_at, approved_by, approved_at, quorum_size, approvers
+            ) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10)
             ON CONFLICT(id) DO UPDATE SET
                 action=excluded.action,
                 subject=excluded.subject,
@@ -220,7 +229,9 @@ impl SqliteApprovalStore {
                 requester=excluded.requester,
                 created_at=excluded.created_at,
                 approved_by=excluded.approved_by,
-                approved_at=excluded.approved_at",
+                approved_at=excluded.approved_at,
+                quorum_size=excluded.quorum_size,
+                approvers=excluded.approvers",
             params![
                 record.id.to_string(),
                 action_raw,
@@ -230,6 +241,8 @@ impl SqliteApprovalStore {
                 created_at,
                 record.approved_by.clone(),
                 approved_at,
+                record.quorum_size,
+                approvers_raw,
             ],
         )
         .map_err(HsmError::storage)?;
@@ -245,6 +258,8 @@ impl SqliteApprovalStore {
         let created_at_raw: String = row.get(5)?;
         let approved_by: Option<String> = row.get(6)?;
         let approved_at_raw: Option<String> = row.get(7)?;
+        let quorum_size: u8 = row.get::<_, i64>(8)? as u8;
+        let approvers_raw: String = row.get(9)?;
 
         Ok(ApprovalRecord {
             id: Uuid::parse_str(&id).map_err(|_| rusqlite::Error::InvalidQuery)?,
@@ -263,6 +278,9 @@ impl SqliteApprovalStore {
                 ),
                 None => None,
             },
+            quorum_size,
+            approvers: serde_json::from_str(&approvers_raw)
+                .map_err(|_| rusqlite::Error::InvalidQuery)?,
         })
     }
 
@@ -292,7 +310,7 @@ impl ApprovalStore for SqliteApprovalStore {
         let conn = self.conn.lock();
         let result = conn
             .query_row(
-                "SELECT id, action, subject, policy_tags, requester, created_at, approved_by, approved_at FROM approvals WHERE id = ?1",
+                "SELECT id, action, subject, policy_tags, requester, created_at, approved_by, approved_at, quorum_size, approvers FROM approvals WHERE id = ?1",
                 params![id.to_string()],
                 Self::map_row,
             )
@@ -310,7 +328,7 @@ impl ApprovalStore for SqliteApprovalStore {
         let action_raw = serde_json::to_string(action).map_err(HsmError::storage)?;
         let result = conn
             .query_row(
-                "SELECT id, action, subject, policy_tags, requester, created_at, approved_by, approved_at FROM approvals WHERE action = ?1 AND subject = ?2 LIMIT 1",
+                "SELECT id, action, subject, policy_tags, requester, created_at, approved_by, approved_at, quorum_size, approvers FROM approvals WHERE action = ?1 AND subject = ?2 LIMIT 1",
                 params![action_raw, subject],
                 Self::map_row,
             )
@@ -333,7 +351,7 @@ impl ApprovalStore for SqliteApprovalStore {
         let conn = self.conn.lock();
         let mut stmt = conn
             .prepare(
-                "SELECT id, action, subject, policy_tags, requester, created_at, approved_by, approved_at FROM approvals ORDER BY created_at DESC",
+                "SELECT id, action, subject, policy_tags, requester, created_at, approved_by, approved_at, quorum_size, approvers FROM approvals ORDER BY created_at DESC",
             )
             .map_err(HsmError::storage)?;
         let rows = stmt

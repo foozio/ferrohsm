@@ -6,7 +6,7 @@ This document consolidates all plans, tasks, and roadmaps into a single actionab
 
 ## Current Status Summary
 
-FerroHSM v0.3.0 has been released with core functionality including AES-256-GCM, RSA/EC cryptography, REST API, CLI, TUI interface, Homebrew distribution, and PKCS#11 compatibility layer (in progress).
+FerroHSM v0.4.0 has been released, bringing synchronized version metadata across all binaries, refreshed Homebrew distribution assets, improved PKCS#11 interoperability, and the existing core functionality including AES-256-GCM, RSA/EC cryptography, REST API, CLI, TUI interface, and post-quantum support.
 
 ## 1. Completed Features ✅
 

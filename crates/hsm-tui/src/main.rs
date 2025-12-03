@@ -17,12 +17,15 @@ use crossterm::{
     execute,
     terminal::{EnterAlternateScreen, LeaveAlternateScreen, disable_raw_mode, enable_raw_mode},
 };
-use ratatui::{prelude::*, widgets::{Block, Borders, Paragraph}};
+use ratatui::{
+    prelude::*,
+    widgets::{Block, Borders, Paragraph},
+};
 use std::{io, panic};
 
 /// FerroHSM TUI - Text-based User Interface for FerroHSM
 #[derive(Parser)]
-#[clap(name = "hsm-tui", version = "0.3.0")]
+#[command(name = "hsm-tui", version)]
 struct Cli {
     /// Server endpoint
     #[clap(long, default_value = "https://localhost:8443")]
@@ -147,20 +150,30 @@ impl AppState {
         self.help_panel.clear();
         match self.mode {
             AppMode::MainMenu => {
-                self.help_panel.add_shortcut("↑↓".to_string(), "Navigate menu".to_string());
-                self.help_panel.add_shortcut("Enter".to_string(), "Select option".to_string());
-                self.help_panel.add_shortcut("q".to_string(), "Quit application".to_string());
-                self.help_panel.add_shortcut("?".to_string(), "Show help".to_string());
+                self.help_panel
+                    .add_shortcut("↑↓".to_string(), "Navigate menu".to_string());
+                self.help_panel
+                    .add_shortcut("Enter".to_string(), "Select option".to_string());
+                self.help_panel
+                    .add_shortcut("q".to_string(), "Quit application".to_string());
+                self.help_panel
+                    .add_shortcut("?".to_string(), "Show help".to_string());
             }
             AppMode::KeysList => {
-                self.help_panel.add_shortcut("↑↓".to_string(), "Navigate keys".to_string());
-                self.help_panel.add_shortcut("Enter".to_string(), "View key details".to_string());
-                self.help_panel.add_shortcut("c".to_string(), "Create new key".to_string());
-                self.help_panel.add_shortcut("Esc".to_string(), "Back to menu".to_string());
+                self.help_panel
+                    .add_shortcut("↑↓".to_string(), "Navigate keys".to_string());
+                self.help_panel
+                    .add_shortcut("Enter".to_string(), "View key details".to_string());
+                self.help_panel
+                    .add_shortcut("c".to_string(), "Create new key".to_string());
+                self.help_panel
+                    .add_shortcut("Esc".to_string(), "Back to menu".to_string());
             }
             _ => {
-                self.help_panel.add_shortcut("Esc".to_string(), "Back to menu".to_string());
-                self.help_panel.add_shortcut("?".to_string(), "Show help".to_string());
+                self.help_panel
+                    .add_shortcut("Esc".to_string(), "Back to menu".to_string());
+                self.help_panel
+                    .add_shortcut("?".to_string(), "Show help".to_string());
             }
         }
     }
@@ -246,10 +259,8 @@ impl App {
                     AppMode::Error => {
                         if let Some(ref error) = self.state.error {
                             let display = ErrorDisplay::new(error.clone());
-                            let dialog = ErrorDialog::new(
-                                display.title().to_string(),
-                                display.message(),
-                            );
+                            let dialog =
+                                ErrorDialog::new(display.title().to_string(), display.message());
                             f.render_widget(dialog, chunks[1]);
                         }
                     }

@@ -3,20 +3,23 @@
 use crate::types::hsm_error_to_ckr;
 use cryptoki::types::*;
 use hsm_core::models::{KeyMetadata, KeyPurpose};
+use hsm_core::storage::KeyRecord;
 use std::collections::HashMap;
 
 /// Represents a PKCS#11 object
 #[derive(Debug, Clone)]
 pub struct Object {
     pub handle: CK_OBJECT_HANDLE,
+    pub record: KeyRecord,
     pub attributes: HashMap<CK_ATTRIBUTE_TYPE, Vec<u8>>,
 }
 
 impl Object {
-    /// Create a new object from key metadata
-    pub fn from_key_metadata(metadata: &KeyMetadata, handle: CK_OBJECT_HANDLE) -> Self {
+    /// Create a new object from a key record
+    pub fn from_key_record(record: KeyRecord, handle: CK_OBJECT_HANDLE) -> Self {
         let mut attributes = HashMap::new();
-        
+        let metadata = &record.metadata;
+
         // Map key metadata to PKCS#11 attributes
         attributes.insert(
             CK_ATTRIBUTE_TYPE::CKA_CLASS,
@@ -45,7 +48,7 @@ impl Object {
             Self::serialize_mechanism_list(&allowed_mechanisms),
         );
         
-        Self { handle, attributes }
+        Self { handle, record, attributes }
     }
     
     /// Get the PKCS#11 object class for a key
@@ -165,12 +168,12 @@ impl ObjectManager {
         handle
     }
     
-    /// Create and add an object from key metadata
-    pub fn add_key_object(&mut self, metadata: &KeyMetadata) -> CK_OBJECT_HANDLE {
+    /// Create and add an object from a key record
+    pub fn add_key_object(&mut self, record: KeyRecord) -> CK_OBJECT_HANDLE {
         let handle = self.next_handle;
         self.next_handle += 1;
         
-        let object = Object::from_key_metadata(metadata, handle);
+        let object = Object::from_key_record(record, handle);
         self.add_object(object)
     }
     

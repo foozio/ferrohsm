@@ -7,10 +7,10 @@
 use crate::ui::style::Theme;
 use crate::ui::widgets::{ErrorDialog, LoadingSpinner, StatusIndicator, SuccessDialog};
 use ratatui::{
+    Frame,
     layout::{Alignment, Rect},
     text::{Line, Span},
     widgets::{Block, Borders, Clear, List, ListItem, Paragraph},
-    Frame,
 };
 use std::collections::HashMap;
 
@@ -256,7 +256,12 @@ pub fn render_loading_spinner(f: &mut Frame, area: Rect, message: &str) {
     f.render_widget(spinner, area);
 }
 
-pub fn render_status_indicator(f: &mut Frame, area: Rect, status: crate::ui::widgets::Status, label: &str) {
+pub fn render_status_indicator(
+    f: &mut Frame,
+    area: Rect,
+    status: crate::ui::widgets::Status,
+    label: &str,
+) {
     let indicator = StatusIndicator::new(status, label.to_string());
     f.render_widget(indicator, area);
 }

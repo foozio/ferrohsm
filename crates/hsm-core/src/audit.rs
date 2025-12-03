@@ -77,6 +77,12 @@ impl MockAuditAnchor {
     }
 }
 
+impl Default for MockAuditAnchor {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl AuditAnchor for MockAuditAnchor {
     fn anchor_hash(&self, hash: &str, timestamp: OffsetDateTime) -> HsmResult<()> {
         tracing::info!("Anchoring audit hash {} at {}", hash, timestamp);
@@ -103,7 +109,7 @@ pub struct KeyRotationPolicy {
 impl Default for KeyRotationPolicy {
     fn default() -> Self {
         Self {
-            max_records: Some(10000), // Rotate every 10k records
+            max_records: Some(10000),                 // Rotate every 10k records
             max_age_seconds: Some(30 * 24 * 60 * 60), // Rotate every 30 days
         }
     }
@@ -119,6 +125,7 @@ pub struct FileAuditLog {
     anchor: Option<Box<dyn AuditAnchor>>,
     rotation_policy: KeyRotationPolicy,
     key_created_at: parking_lot::Mutex<Option<OffsetDateTime>>,
+    anchor_batch_size: u64,
 }
 
 impl FileAuditLog {
@@ -138,10 +145,11 @@ impl FileAuditLog {
             anchor: None,
             rotation_policy: KeyRotationPolicy::default(),
             key_created_at: parking_lot::Mutex::new(None),
+            anchor_batch_size: 100,
         })
     }
 
-    pub fn with_signing_key(mut self, key: Vec<u8>) -> Self {
+    pub fn with_signing_key(self, key: Vec<u8>) -> Self {
         *self.key.lock() = Some(key);
         *self.key_created_at.lock() = Some(OffsetDateTime::now_utc());
         self
@@ -149,6 +157,11 @@ impl FileAuditLog {
 
     pub fn with_anchor(mut self, anchor: Box<dyn AuditAnchor>) -> Self {
         self.anchor = Some(anchor);
+        self
+    }
+
+    pub fn with_anchor_batch_size(mut self, batch_size: u64) -> Self {
+        self.anchor_batch_size = batch_size.max(1);
         self
     }
 
@@ -169,24 +182,26 @@ impl FileAuditLog {
         let now = OffsetDateTime::now_utc();
 
         // Check record count
-        if let Some(max_records) = self.rotation_policy.max_records {
-            if chain.record_count >= max_records {
-                return true;
-            }
+        if let Some(max_records) = self.rotation_policy.max_records
+            && chain.record_count >= max_records
+        {
+            return true;
         }
 
         // Check age
-        if let (Some(max_age), Some(created_at)) = (self.rotation_policy.max_age_seconds, *self.key_created_at.lock()) {
-            if (now - created_at).as_seconds_f64() >= max_age as f64 {
-                return true;
-            }
+        if let (Some(max_age), Some(created_at)) = (
+            self.rotation_policy.max_age_seconds,
+            *self.key_created_at.lock(),
+        ) && (now - created_at).as_seconds_f64() >= max_age as f64
+        {
+            return true;
         }
 
         false
     }
 
     /// Generate a new random key for rotation
-    fn generate_new_key() -> Vec<u8> {
+    pub(crate) fn generate_new_key() -> Vec<u8> {
         use rand::RngCore;
         let mut key = vec![0u8; 32];
         rand::thread_rng().fill_bytes(&mut key);
@@ -222,10 +237,10 @@ impl FileAuditLog {
             }
 
             // Verify signature if present
-            if let (Some(sig), Some(key)) = (&event.signature, self.key.lock().as_ref()) {
-                if !crate::crypto::verify_audit_signature(key, &event.record, sig) {
-                    return Ok(false);
-                }
+            if let (Some(sig), Some(key)) = (&event.signature, self.key.lock().as_ref())
+                && !crate::crypto::verify_audit_signature(key, &event.record, sig)
+            {
+                return Ok(false);
             }
 
             prev_hash = Some(event.hash);
@@ -244,10 +259,10 @@ impl FileAuditLog {
         // Verify external anchors if available
         if let Some(anchor) = &self.anchor {
             let chain = self.chain.lock();
-            if let Some(last_hash) = &chain.last_hash {
-                if !anchor.verify_anchor(last_hash)? {
-                    return Err(HsmError::audit("External anchor verification failed"));
-                }
+            if let Some(last_hash) = &chain.last_hash
+                && !anchor.verify_anchor(last_hash)?
+            {
+                return Err(HsmError::audit("External anchor verification failed"));
             }
         }
 
@@ -343,9 +358,9 @@ impl AuditLog for FileAuditLog {
         chain.last_hash = Some(hash.clone());
         FileExt::unlock(&file).map_err(HsmError::audit)?;
 
-        // Anchor hash to external store periodically (every 100 records)
+        // Anchor hash to external store periodically
         if let Some(anchor) = &self.anchor {
-            if chain.record_count % 100 == 0 {
+            if chain.record_count % self.anchor_batch_size == 0 {
                 anchor.anchor_hash(&hash, timestamp)?;
             }
         }

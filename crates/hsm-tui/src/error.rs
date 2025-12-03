@@ -90,7 +90,9 @@ impl ErrorDisplay {
     pub fn suggestion(&self) -> &str {
         match self.error {
             AppError::Network(_) => "Check your network connection and server configuration.",
-            AppError::Config(_) => "Review your configuration file and ensure all required fields are set.",
+            AppError::Config(_) => {
+                "Review your configuration file and ensure all required fields are set."
+            }
             AppError::Validation(_) => "Check your input and try again.",
             AppError::Auth(_) => "Verify your credentials and try again.",
             AppError::Internal(_) => "Please report this issue to the developers.",

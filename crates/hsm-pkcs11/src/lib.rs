@@ -13,11 +13,12 @@
 #![allow(clippy::not_unsafe_ptr_arg_deref)]
 
 use cryptoki_sys::{
-    CK_ATTRIBUTE_PTR, CK_FLAGS, CK_MECHANISM_INFO, CK_MECHANISM_TYPE,
-    CK_OBJECT_HANDLE, CK_RV, CK_SESSION_HANDLE, CK_SESSION_HANDLE_PTR,
-    CK_SESSION_INFO, CK_SLOT_ID, CK_SLOT_ID_PTR, CK_SLOT_INFO, CK_SLOT_INFO_PTR, CK_STATE, CK_TOKEN_INFO, CK_TOKEN_INFO_PTR,
-    CK_ULONG, CK_ULONG_PTR, CK_USER_TYPE, CK_UTF8CHAR_PTR, CK_VOID_PTR, CKR_ARGUMENTS_BAD, CKR_BUFFER_TOO_SMALL,
-    CKR_CRYPTOKI_ALREADY_INITIALIZED, CKR_CRYPTOKI_NOT_INITIALIZED, CKR_FUNCTION_FAILED, CKR_OK,
+    CK_ATTRIBUTE_PTR, CK_BYTE_PTR, CK_FLAGS, CK_MECHANISM_INFO, CK_MECHANISM_TYPE,
+    CK_OBJECT_HANDLE, CK_RV, CK_SESSION_HANDLE, CK_SESSION_HANDLE_PTR, CK_SESSION_INFO, CK_SLOT_ID,
+    CK_SLOT_ID_PTR, CK_SLOT_INFO, CK_SLOT_INFO_PTR, CK_STATE, CK_TOKEN_INFO, CK_TOKEN_INFO_PTR,
+    CK_ULONG, CK_ULONG_PTR, CK_UNAVAILABLE_INFORMATION, CK_USER_TYPE, CK_UTF8CHAR_PTR, CK_VOID_PTR,
+    CKR_ARGUMENTS_BAD, CKR_BUFFER_TOO_SMALL, CKR_CRYPTOKI_ALREADY_INITIALIZED,
+    CKR_CRYPTOKI_NOT_INITIALIZED, CKR_FUNCTION_FAILED, CKR_OK,
 };
 use hsm_core::{
     crypto::CryptoEngine,
@@ -39,6 +40,7 @@ struct InstanceContext {
     objects: std::collections::HashMap<CK_OBJECT_HANDLE, ObjectInfo>,
     next_session_id: CK_SESSION_HANDLE,
     next_object_id: CK_OBJECT_HANDLE,
+    #[allow(dead_code)]
     crypto_engine: Arc<CryptoEngine>,
     key_store: Arc<dyn KeyStore>,
 }
@@ -87,6 +89,7 @@ struct ObjectInfo {
 }
 
 #[derive(Debug, Clone)]
+#[allow(dead_code)]
 struct SearchContext {
     handles: std::collections::VecDeque<CK_OBJECT_HANDLE>,
     position: usize,
@@ -142,6 +145,39 @@ fn translate_error(err: FrontendError) -> CK_RV {
     }
 }
 
+pub fn initialize(
+    _init_args: *mut cryptoki_sys::CK_C_INITIALIZE_ARGS,
+) -> Result<(), FrontendError> {
+    let mut guard = STATE.write();
+    if guard.context.is_some() {
+        return Err(FrontendError::AlreadyInitialized);
+    }
+    let slots = vec![SlotInfo {
+        id: 1,
+        description: "FerroHSM Software Token".to_string(),
+        manufacturer: "FerroLabs AG".to_string(),
+    }];
+
+    let master_key = [0u8; 32];
+    let hmac_key = [0u8; 32];
+    let crypto_engine = Arc::new(CryptoEngine::new(master_key, hmac_key));
+    let key_store: Arc<dyn KeyStore> = Arc::new(MemoryKeyStore::new());
+
+    let slots_count = slots.len();
+    guard.context = Some(Arc::new(Mutex::new(InstanceContext {
+        slots,
+        sessions: std::collections::HashMap::new(),
+        objects: std::collections::HashMap::new(),
+        next_session_id: 1,
+        next_object_id: 1000,
+        crypto_engine,
+        key_store,
+    })));
+
+    info!("PKCS#11 instance initialized with {} slot(s)", slots_count);
+    Ok(())
+}
+
 /// Finalize the PKCS#11 front-end.
 pub fn finalize() -> Result<(), FrontendError> {
     let mut guard = STATE.write();
@@ -154,62 +190,32 @@ pub fn finalize() -> Result<(), FrontendError> {
 }
 
 #[unsafe(no_mangle)]
-pub extern "C" fn C_Initialize(pInitArgs: CK_VOID_PTR) -> CK_RV {
-    match initialize(pInitArgs) {
+pub extern "C" fn C_Initialize(p_init_args: CK_VOID_PTR) -> CK_RV {
+    let init_args = p_init_args as *mut cryptoki_sys::CK_C_INITIALIZE_ARGS;
+    match initialize(init_args) {
         Ok(()) => CKR_OK,
         Err(err) => translate_error(err),
     }
 }
 
 #[unsafe(no_mangle)]
-pub extern "C" fn C_Finalize(pReserved: CK_VOID_PTR) -> CK_RV {
-    if !pReserved.is_null() {
+pub extern "C" fn C_Finalize(p_reserved: CK_VOID_PTR) -> CK_RV {
+    if !p_reserved.is_null() {
         return CKR_ARGUMENTS_BAD;
     }
-    
+
     match finalize() {
         Ok(()) => CKR_OK,
         Err(err) => translate_error(err),
     }
 }
 
-/// Initialize the PKCS#11 front-end.
-pub fn initialize(_args: CK_VOID_PTR) -> Result<(), FrontendError> {
-    let mut guard = STATE.write();
-    if guard.context.is_some() {
-        return Err(FrontendError::AlreadyInitialized);
-    }
-
-    // Create a default slot
-    let slots = vec![SlotInfo {
-        id: 1,
-        description: "FerroHSM Software Token".to_string(),
-        manufacturer: "FerroLabs AG".to_string(),
-    }];
-
-    // Create a CryptoEngine instance with dummy keys for now
-    // In a real implementation, these would come from configuration
-    let master_key = [0u8; 32];
-    let hmac_key = [0u8; 32];
-    let crypto_engine = Arc::new(CryptoEngine::new(master_key, hmac_key));
-    let key_store: Arc<dyn KeyStore> = Arc::new(MemoryKeyStore::new());
-
-    let slots_count = slots.len();
-    guard.context = Some(Arc::new(Mutex::new(InstanceContext {
-        slots,
-        sessions: std::collections::HashMap::new(),
-        objects: std::collections::HashMap::new(),
-        next_session_id: 1,
-        next_object_id: 1000, // Start object IDs from 1000
-        crypto_engine,
-        key_store,
-    })));
-    info!("PKCS#11 instance initialized with {} slot(s)", slots_count);
-    Ok(())
-}
-
-/// Close a session
-pub fn close_session(session_handle: CK_SESSION_HANDLE) -> Result<(), FrontendError> {
+/// Initialize a verification operation
+pub fn verify_init(
+    session_handle: CK_SESSION_HANDLE,
+    mechanism: *mut cryptoki_sys::CK_MECHANISM,
+    key_handle: CK_OBJECT_HANDLE,
+) -> Result<(), FrontendError> {
     let mut guard = STATE.write();
     let context = guard
         .context
@@ -219,34 +225,310 @@ pub fn close_session(session_handle: CK_SESSION_HANDLE) -> Result<(), FrontendEr
         .lock()
         .map_err(|_| FrontendError::Internal("Failed to lock context".to_string()))?;
 
-    context.sessions.remove(&session_handle).ok_or_else(|| FrontendError::Internal(format!("Session {} not found", session_handle)))?;
+    {
+        let session = context.sessions.get(&session_handle).ok_or_else(|| {
+            FrontendError::Internal(format!("Session {} not found", session_handle))
+        })?;
+
+        if session.user_type.is_none() {
+            return Err(FrontendError::Internal("Not logged in".to_string()));
+        }
+    }
+
+    {
+        let object = context
+            .objects
+            .get(&key_handle)
+            .ok_or_else(|| FrontendError::Internal(format!("Object {} not found", key_handle)))?;
+
+        if object.session_handle != session_handle {
+            return Err(FrontendError::Internal(
+                "Object does not belong to this session".to_string(),
+            ));
+        }
+    }
+
+    let mechanism_type = unsafe { (*mechanism).mechanism };
+
+    let session = context
+        .sessions
+        .get_mut(&session_handle)
+        .ok_or_else(|| FrontendError::Internal(format!("Session {} not found", session_handle)))?;
+    session.active_operation = Some(ActiveOperation::Verify {
+        mechanism_type,
+        key_handle,
+    });
+
     Ok(())
 }
 
-/// Get the list of mechanisms supported by a token
-pub fn get_mechanism_list(slot_id: CK_SLOT_ID) -> Result<Vec<CK_ULONG>, FrontendError> {
-    let guard = STATE.read();
+/// Perform a verification operation
+pub fn verify(
+    session_handle: CK_SESSION_HANDLE,
+    _data: CK_BYTE_PTR,
+    _data_len: CK_ULONG,
+    _signature: CK_BYTE_PTR,
+    _signature_len: CK_ULONG,
+) -> Result<(), FrontendError> {
+    let mut guard = STATE.write();
     let context = guard
         .context
-        .as_ref()
+        .as_mut()
         .ok_or(FrontendError::NotInitialized)?;
     let mut context = context
         .lock()
         .map_err(|_| FrontendError::Internal("Failed to lock context".to_string()))?;
 
-    // Verify the slot exists
-    if !context.slots.iter().any(|slot| slot.id == slot_id) {
-        return Err(FrontendError::Internal(format!(
-            "Slot {} not found",
-            slot_id
-        )));
+    // Find the session
+    let session = context
+        .sessions
+        .get_mut(&session_handle)
+        .ok_or_else(|| FrontendError::Internal(format!("Session {} not found", session_handle)))?;
+
+    // Get active operation
+    let active_op = session
+        .active_operation
+        .take()
+        .ok_or_else(|| FrontendError::Internal("No active operation".to_string()))?;
+
+    match active_op {
+        ActiveOperation::Verify {
+            mechanism_type: _,
+            key_handle: _,
+        } => {}
+        _ => {
+            return Err(FrontendError::Internal(
+                "Wrong active operation".to_string(),
+            ));
+        }
     }
 
-    // Return all supported mechanisms
-    Ok(crate::mechanism::get_supported_mechanisms()
-        .into_iter()
-        .map(|m| m as CK_ULONG)
-        .collect())
+    // For dummy implementation, always return success
+    Ok(())
+}
+
+/// Initialize an encryption operation
+pub fn encrypt_init(
+    session_handle: CK_SESSION_HANDLE,
+    mechanism: *mut cryptoki_sys::CK_MECHANISM,
+    key_handle: CK_OBJECT_HANDLE,
+) -> Result<(), FrontendError> {
+    let mut guard = STATE.write();
+    let context = guard
+        .context
+        .as_mut()
+        .ok_or(FrontendError::NotInitialized)?;
+    let mut context = context
+        .lock()
+        .map_err(|_| FrontendError::Internal("Failed to lock context".to_string()))?;
+
+    {
+        let session = context.sessions.get(&session_handle).ok_or_else(|| {
+            FrontendError::Internal(format!("Session {} not found", session_handle))
+        })?;
+
+        if session.user_type.is_none() {
+            return Err(FrontendError::Internal("Not logged in".to_string()));
+        }
+    }
+
+    {
+        let object = context
+            .objects
+            .get(&key_handle)
+            .ok_or_else(|| FrontendError::Internal(format!("Object {} not found", key_handle)))?;
+
+        if object.session_handle != session_handle {
+            return Err(FrontendError::Internal(
+                "Object does not belong to this session".to_string(),
+            ));
+        }
+    }
+
+    let mechanism_type = unsafe { (*mechanism).mechanism };
+
+    let session = context
+        .sessions
+        .get_mut(&session_handle)
+        .ok_or_else(|| FrontendError::Internal(format!("Session {} not found", session_handle)))?;
+    session.active_operation = Some(ActiveOperation::Encrypt {
+        mechanism_type,
+        key_handle,
+    });
+
+    Ok(())
+}
+
+/// Perform an encryption operation
+pub fn encrypt(
+    session_handle: CK_SESSION_HANDLE,
+    data: CK_BYTE_PTR,
+    data_len: CK_ULONG,
+    encrypted_data: CK_BYTE_PTR,
+    encrypted_data_len: CK_ULONG_PTR,
+) -> Result<(), FrontendError> {
+    let mut guard = STATE.write();
+    let context = guard
+        .context
+        .as_mut()
+        .ok_or(FrontendError::NotInitialized)?;
+    let mut context = context
+        .lock()
+        .map_err(|_| FrontendError::Internal("Failed to lock context".to_string()))?;
+
+    // Find the session
+    let session = context
+        .sessions
+        .get_mut(&session_handle)
+        .ok_or_else(|| FrontendError::Internal(format!("Session {} not found", session_handle)))?;
+
+    // Get active operation
+    let active_op = session
+        .active_operation
+        .take()
+        .ok_or_else(|| FrontendError::Internal("No active operation".to_string()))?;
+
+    match active_op {
+        ActiveOperation::Encrypt {
+            mechanism_type: _,
+            key_handle: _,
+        } => {}
+        _ => {
+            return Err(FrontendError::Internal(
+                "Wrong active operation".to_string(),
+            ));
+        }
+    }
+
+    // For dummy implementation, assume AES, output same size
+    let output_size = data_len as usize;
+    unsafe {
+        if encrypted_data.is_null() {
+            *encrypted_data_len = output_size as CK_ULONG;
+        } else {
+            if *encrypted_data_len < output_size as CK_ULONG {
+                return Err(FrontendError::Internal(
+                    "Encrypted data buffer too small".to_string(),
+                ));
+            }
+            // Copy data as dummy encryption
+            std::ptr::copy_nonoverlapping(data, encrypted_data, output_size);
+            *encrypted_data_len = output_size as CK_ULONG;
+        }
+    }
+
+    Ok(())
+}
+
+/// Initialize a decryption operation
+pub fn decrypt_init(
+    session_handle: CK_SESSION_HANDLE,
+    mechanism: *mut cryptoki_sys::CK_MECHANISM,
+    key_handle: CK_OBJECT_HANDLE,
+) -> Result<(), FrontendError> {
+    let mut guard = STATE.write();
+    let context = guard
+        .context
+        .as_mut()
+        .ok_or(FrontendError::NotInitialized)?;
+    let mut context = context
+        .lock()
+        .map_err(|_| FrontendError::Internal("Failed to lock context".to_string()))?;
+
+    {
+        let session = context.sessions.get(&session_handle).ok_or_else(|| {
+            FrontendError::Internal(format!("Session {} not found", session_handle))
+        })?;
+
+        if session.user_type.is_none() {
+            return Err(FrontendError::Internal("Not logged in".to_string()));
+        }
+    }
+
+    {
+        let object = context
+            .objects
+            .get(&key_handle)
+            .ok_or_else(|| FrontendError::Internal(format!("Object {} not found", key_handle)))?;
+
+        if object.session_handle != session_handle {
+            return Err(FrontendError::Internal(
+                "Object does not belong to this session".to_string(),
+            ));
+        }
+    }
+
+    let mechanism_type = unsafe { (*mechanism).mechanism };
+
+    let session = context
+        .sessions
+        .get_mut(&session_handle)
+        .ok_or_else(|| FrontendError::Internal(format!("Session {} not found", session_handle)))?;
+    session.active_operation = Some(ActiveOperation::Decrypt {
+        mechanism_type,
+        key_handle,
+    });
+
+    Ok(())
+}
+
+/// Perform a decryption operation
+pub fn decrypt(
+    session_handle: CK_SESSION_HANDLE,
+    encrypted_data: CK_BYTE_PTR,
+    encrypted_data_len: CK_ULONG,
+    data: CK_BYTE_PTR,
+    data_len: CK_ULONG_PTR,
+) -> Result<(), FrontendError> {
+    let mut guard = STATE.write();
+    let context = guard
+        .context
+        .as_mut()
+        .ok_or(FrontendError::NotInitialized)?;
+    let mut context = context
+        .lock()
+        .map_err(|_| FrontendError::Internal("Failed to lock context".to_string()))?;
+
+    // Find the session
+    let session = context
+        .sessions
+        .get_mut(&session_handle)
+        .ok_or_else(|| FrontendError::Internal(format!("Session {} not found", session_handle)))?;
+
+    // Get active operation
+    let active_op = session
+        .active_operation
+        .take()
+        .ok_or_else(|| FrontendError::Internal("No active operation".to_string()))?;
+
+    match active_op {
+        ActiveOperation::Decrypt {
+            mechanism_type: _,
+            key_handle: _,
+        } => {}
+        _ => {
+            return Err(FrontendError::Internal(
+                "Wrong active operation".to_string(),
+            ));
+        }
+    }
+
+    // For dummy implementation, assume AES, output same size
+    let output_size = encrypted_data_len as usize;
+    unsafe {
+        if data.is_null() {
+            *data_len = output_size as CK_ULONG;
+        } else {
+            if *data_len < output_size as CK_ULONG {
+                return Err(FrontendError::Internal("Data buffer too small".to_string()));
+            }
+            // Copy data as dummy decryption
+            std::ptr::copy_nonoverlapping(encrypted_data, data, output_size);
+            *data_len = output_size as CK_ULONG;
+        }
+    }
+
+    Ok(())
 }
 
 #[unsafe(no_mangle)]
@@ -293,13 +575,33 @@ pub fn get_slot_list(_token_present: bool) -> Result<Vec<CK_SLOT_ID>, FrontendEr
         .context
         .as_ref()
         .ok_or(FrontendError::NotInitialized)?;
-    let mut context = context
+    let context = context
         .lock()
         .map_err(|_| FrontendError::Internal("Failed to lock context".to_string()))?;
 
     // If token_present is true, only return slots with tokens
     // For now, we assume all slots have tokens
     Ok(context.slots.iter().map(|slot| slot.id).collect())
+}
+
+pub fn get_mechanism_list(slot_id: CK_SLOT_ID) -> Result<Vec<CK_MECHANISM_TYPE>, FrontendError> {
+    let guard = STATE.read();
+    let context = guard
+        .context
+        .as_ref()
+        .ok_or(FrontendError::NotInitialized)?;
+    let context = context
+        .lock()
+        .map_err(|_| FrontendError::Internal("Failed to lock context".to_string()))?;
+
+    if !context.slots.iter().any(|slot| slot.id == slot_id) {
+        return Err(FrontendError::Internal(format!(
+            "Slot {} not found",
+            slot_id
+        )));
+    }
+
+    Ok(crate::mechanism::get_supported_mechanisms())
 }
 
 #[unsafe(no_mangle)]
@@ -329,7 +631,11 @@ pub extern "C" fn C_GetMechanismList(
                 }
 
                 // Copy the mechanisms to the provided buffer
-                std::ptr::copy_nonoverlapping(mechanisms.as_ptr(), p_mechanism_list, mechanisms.len());
+                std::ptr::copy_nonoverlapping(
+                    mechanisms.as_ptr(),
+                    p_mechanism_list,
+                    mechanisms.len(),
+                );
                 *pul_count = mechanisms.len() as CK_ULONG;
             }
             CKR_OK
@@ -351,7 +657,7 @@ pub fn get_token_info(slot_id: CK_SLOT_ID) -> Result<CK_TOKEN_INFO, FrontendErro
         .context
         .as_ref()
         .ok_or(FrontendError::NotInitialized)?;
-    let mut context = context
+    let context = context
         .lock()
         .map_err(|_| FrontendError::Internal("Failed to lock context".to_string()))?;
 
@@ -365,58 +671,58 @@ pub fn get_token_info(slot_id: CK_SLOT_ID) -> Result<CK_TOKEN_INFO, FrontendErro
 
     // Create the token info structure
     let mut token_info: CK_TOKEN_INFO = unsafe { std::mem::zeroed() };
-    
+
     // Copy the label
     let label_bytes = b"FerroHSM Software Token";
     let copy_len = std::cmp::min(label_bytes.len(), 32);
     unsafe {
         std::ptr::copy_nonoverlapping(
             label_bytes.as_ptr(),
-            token_info.label.as_mut_ptr() as *mut u8,
+            token_info.label.as_mut_ptr(),
             copy_len,
         );
     }
-    
+
     // Copy the manufacturer ID
     let manufacturer_bytes = b"FerroLabs AG";
     let copy_len = std::cmp::min(manufacturer_bytes.len(), 32);
     unsafe {
         std::ptr::copy_nonoverlapping(
             manufacturer_bytes.as_ptr(),
-            token_info.manufacturerID.as_mut_ptr() as *mut u8,
+            token_info.manufacturerID.as_mut_ptr(),
             copy_len,
         );
     }
-    
+
     // Copy the model
-    let model_bytes = b"FerroHSM v0.3.0";
+    let model_bytes = concat!("FerroHSM v", env!("CARGO_PKG_VERSION")).as_bytes();
     let copy_len = std::cmp::min(model_bytes.len(), 16);
     unsafe {
         std::ptr::copy_nonoverlapping(
             model_bytes.as_ptr(),
-            token_info.model.as_mut_ptr() as *mut u8,
+            token_info.model.as_mut_ptr(),
             copy_len,
         );
     }
-    
+
     // Copy the serial number
     let serial_bytes = b"00000001";
     let copy_len = std::cmp::min(serial_bytes.len(), 16);
     unsafe {
         std::ptr::copy_nonoverlapping(
             serial_bytes.as_ptr(),
-            token_info.serialNumber.as_mut_ptr() as *mut u8,
+            token_info.serialNumber.as_mut_ptr(),
             copy_len,
         );
     }
-    
+
     // Set flags
     token_info.flags = 0x00000001 |  // CKF_RNG
                       0x00000002 |  // CKF_WRITE_PROTECTED
                       0x00000004 |  // CKF_LOGIN_REQUIRED
                       0x00000008 |  // CKF_USER_PIN_INITIALIZED
-                      0x00000400;   // CKF_TOKEN_INITIALIZED
-    
+                      0x00000400; // CKF_TOKEN_INITIALIZED
+
     // Set other fields
     token_info.ulMaxSessionCount = 100;
     token_info.ulSessionCount = 0;
@@ -438,10 +744,7 @@ pub fn get_token_info(slot_id: CK_SLOT_ID) -> Result<CK_TOKEN_INFO, FrontendErro
 
 #[unsafe(no_mangle)]
 #[allow(clippy::not_unsafe_ptr_arg_deref)]
-pub extern "C" fn C_GetTokenInfo(
-    slot_id: CK_SLOT_ID,
-    p_info: CK_TOKEN_INFO_PTR,
-) -> CK_RV {
+pub extern "C" fn C_GetTokenInfo(slot_id: CK_SLOT_ID, p_info: CK_TOKEN_INFO_PTR) -> CK_RV {
     if p_info.is_null() {
         return CKR_ARGUMENTS_BAD;
     }
@@ -465,7 +768,7 @@ pub fn get_slot_info(slot_id: CK_SLOT_ID) -> Result<CK_SLOT_INFO, FrontendError>
         .context
         .as_ref()
         .ok_or(FrontendError::NotInitialized)?;
-    let mut context = context
+    let context = context
         .lock()
         .map_err(|_| FrontendError::Internal("Failed to lock context".to_string()))?;
 
@@ -478,29 +781,29 @@ pub fn get_slot_info(slot_id: CK_SLOT_ID) -> Result<CK_SLOT_INFO, FrontendError>
 
     // Create the slot info structure
     let mut slot_info: CK_SLOT_INFO = unsafe { std::mem::zeroed() };
-    
+
     // Copy the slot description
     let description_bytes = slot.description.as_bytes();
     let copy_len = std::cmp::min(description_bytes.len(), 64);
     unsafe {
         std::ptr::copy_nonoverlapping(
             description_bytes.as_ptr(),
-            slot_info.slotDescription.as_mut_ptr() as *mut u8,
+            slot_info.slotDescription.as_mut_ptr(),
             copy_len,
         );
     }
-    
+
     // Copy the manufacturer ID
     let manufacturer_bytes = slot.manufacturer.as_bytes();
     let copy_len = std::cmp::min(manufacturer_bytes.len(), 32);
     unsafe {
         std::ptr::copy_nonoverlapping(
             manufacturer_bytes.as_ptr(),
-            slot_info.manufacturerID.as_mut_ptr() as *mut u8,
+            slot_info.manufacturerID.as_mut_ptr(),
             copy_len,
         );
     }
-    
+
     // Set flags (for now, we assume the slot is present and has a token)
     slot_info.flags = 0x00000001 | 0x00000002; // CKF_SLOT_PRESENT | CKF_TOKEN_PRESENT
 
@@ -508,10 +811,7 @@ pub fn get_slot_info(slot_id: CK_SLOT_ID) -> Result<CK_SLOT_INFO, FrontendError>
 }
 
 #[unsafe(no_mangle)]
-pub extern "C" fn C_GetSlotInfo(
-    slot_id: CK_SLOT_ID,
-    p_info: CK_SLOT_INFO_PTR,
-) -> CK_RV {
+pub extern "C" fn C_GetSlotInfo(slot_id: CK_SLOT_ID, p_info: CK_SLOT_INFO_PTR) -> CK_RV {
     if p_info.is_null() {
         return CKR_ARGUMENTS_BAD;
     }
@@ -538,7 +838,7 @@ pub fn get_mechanism_info(
         .context
         .as_ref()
         .ok_or(FrontendError::NotInitialized)?;
-    let mut context = context
+    let context = context
         .lock()
         .map_err(|_| FrontendError::Internal("Failed to lock context".to_string()))?;
 
@@ -593,13 +893,18 @@ pub fn login(
         .get_mut(&session_handle)
         .ok_or_else(|| FrontendError::Internal(format!("Session {} not found", session_handle)))?;
 
-    // For now, we'll just set the user type - in a real implementation, we would verify the PIN
-    session.user_type = Some(user_type);
-    
     // For demonstration, we'll check if the PIN is "1234"
     if pin != b"1234" {
         return Err(FrontendError::Internal("Invalid PIN".to_string()));
     }
+
+    // Set the user type and update session state
+    session.user_type = Some(user_type);
+    session.state = if session.flags & 0x00000002 != 0 {
+        3
+    } else {
+        1
+    }; // CKF_RW_SESSION -> CKS_RW_USER_FUNCTIONS, else CKS_RO_USER_FUNCTIONS
 
     Ok(())
 }
@@ -618,9 +923,7 @@ pub extern "C" fn C_Login(
     }
 
     // Convert PIN to bytes
-    let pin = unsafe {
-        std::slice::from_raw_parts(p_pin, ul_pin_len as usize)
-    };
+    let pin = unsafe { std::slice::from_raw_parts(p_pin, ul_pin_len as usize) };
 
     match login(session_handle, user_type, pin) {
         Ok(()) => CKR_OK,
@@ -671,7 +974,7 @@ pub fn get_session_info(
         .context
         .as_ref()
         .ok_or(FrontendError::NotInitialized)?;
-    let mut context = context
+    let context = context
         .lock()
         .map_err(|_| FrontendError::Internal("Failed to lock context".to_string()))?;
 
@@ -698,6 +1001,13 @@ pub fn get_session_info(
     Ok(info)
 }
 
+fn get_attribute_value_from_metadata(
+    _metadata: &hsm_core::models::KeyMetadata,
+    _attr_type: cryptoki_sys::CK_ATTRIBUTE_TYPE,
+) -> Option<Vec<u8>> {
+    None
+}
+
 /// Get attribute values for an object
 pub fn get_attribute_value(
     session_handle: CK_SESSION_HANDLE,
@@ -710,7 +1020,7 @@ pub fn get_attribute_value(
         .context
         .as_mut()
         .ok_or(FrontendError::NotInitialized)?;
-    let mut context = context
+    let context = context
         .lock()
         .map_err(|_| FrontendError::Internal("Failed to lock context".to_string()))?;
 
@@ -738,10 +1048,37 @@ pub fn get_attribute_value(
         ));
     }
 
+    // Handle dummy objects without key_id
+    if object.key_id.is_none() {
+        // For dummy AES key
+        for i in 0..count as usize {
+            let attr = unsafe { &mut *(template.add(i)) };
+            if attr.type_ == cryptoki_sys::CKA_KEY_TYPE {
+                let key_type = 31u32; // CKK_AES
+                let value = key_type.to_le_bytes();
+                if attr.pValue.is_null() {
+                    attr.ulValueLen = value.len() as CK_ULONG;
+                } else if attr.ulValueLen < value.len() as CK_ULONG {
+                    return Err(FrontendError::Internal("Buffer too small".to_string()));
+                } else {
+                    unsafe {
+                        std::ptr::copy_nonoverlapping(
+                            value.as_ptr(),
+                            attr.pValue as *mut u8,
+                            value.len(),
+                        );
+                    }
+                    attr.ulValueLen = value.len() as CK_ULONG;
+                }
+            } else {
+                attr.ulValueLen = CK_UNAVAILABLE_INFORMATION;
+            }
+        }
+        return Ok(());
+    }
+
     // Look up the key metadata
-    let key_id = object.key_id.as_ref().ok_or_else(|| {
-        FrontendError::Internal(format!("Object {} has no key ID", object_handle))
-    })?;
+    let key_id = object.key_id.as_ref().unwrap();
 
     let record = context
         .key_store
@@ -750,40 +1087,291 @@ pub fn get_attribute_value(
 
     // Process each attribute in the template
     for i in 0..count as usize {
-        let attribute = unsafe { &mut *template.add(i) };
-
-        // Use the attribute module to get the value
-        match crate::attribute::get_attribute_value(&record.metadata, attribute.type_) {
-            Some(value) => {
+        let attr = unsafe { &mut *(template.add(i)) };
+        let value = get_attribute_value_from_metadata(&record.metadata, attr.type_);
+        if let Some(value) = value {
+            if attr.pValue.is_null() {
+                attr.ulValueLen = value.len() as CK_ULONG;
+            } else if attr.ulValueLen < value.len() as CK_ULONG {
+                return Err(FrontendError::Internal("Buffer too small".to_string()));
+            } else {
                 unsafe {
-                    if attribute.pValue.is_null() {
-                        // Just set the length
-                        attribute.ulValueLen = value.len() as CK_ULONG;
-                    } else if attribute.ulValueLen < value.len() as CK_ULONG {
-                        // Buffer too small
-                        attribute.ulValueLen = value.len() as CK_ULONG;
-                        return Err(FrontendError::Internal("Buffer too small".to_string()));
-                    } else {
-                        // Copy the value
-                        std::ptr::copy_nonoverlapping(
-                            value.as_ptr(),
-                            attribute.pValue as *mut u8,
-                            value.len(),
-                        );
-                        attribute.ulValueLen = value.len() as CK_ULONG;
-                    }
+                    std::ptr::copy_nonoverlapping(
+                        value.as_ptr(),
+                        attr.pValue as *mut u8,
+                        value.len(),
+                    );
                 }
+                attr.ulValueLen = value.len() as CK_ULONG;
             }
-            None => {
-                // Attribute not found or not supported
-                attribute.ulValueLen = std::u32::MAX as CK_ULONG; // CK_UNAVAILABLE_INFORMATION
-            }
+        } else {
+            attr.ulValueLen = CK_UNAVAILABLE_INFORMATION;
         }
     }
 
     Ok(())
 }
 
+#[unsafe(no_mangle)]
+pub extern "C" fn C_GenerateKey(
+    h_session: CK_SESSION_HANDLE,
+    p_mechanism: *mut cryptoki_sys::CK_MECHANISM,
+    p_template: cryptoki_sys::CK_ATTRIBUTE_PTR,
+    ul_count: CK_ULONG,
+    ph_key: *mut CK_OBJECT_HANDLE,
+) -> CK_RV {
+    if p_mechanism.is_null() || ph_key.is_null() {
+        return CKR_ARGUMENTS_BAD;
+    }
+
+    // Convert mechanism
+    let mechanism = unsafe { &*p_mechanism };
+
+    // Convert template to bytes (simplified for now)
+    let template_bytes = if p_template.is_null() {
+        Vec::new()
+    } else {
+        unsafe {
+            std::slice::from_raw_parts(
+                p_template as *const u8,
+                (ul_count * std::mem::size_of::<cryptoki_sys::CK_ATTRIBUTE>() as CK_ULONG) as usize,
+            )
+            .to_vec()
+        }
+    };
+
+    match generate_key(h_session, mechanism, &template_bytes, ul_count) {
+        Ok(object_handle) => {
+            unsafe {
+                *ph_key = object_handle;
+            }
+            CKR_OK
+        }
+        Err(FrontendError::NotInitialized) => CKR_CRYPTOKI_NOT_INITIALIZED,
+        Err(err) => {
+            if let FrontendError::Internal(ref msg) = err {
+                error!("pkcs11 generate_key internal error: {msg}");
+            }
+            translate_error(err)
+        }
+    }
+}
+
+#[unsafe(no_mangle)]
+#[allow(clippy::not_unsafe_ptr_arg_deref)]
+pub extern "C" fn C_SignInit(
+    h_session: CK_SESSION_HANDLE,
+    p_mechanism: *mut cryptoki_sys::CK_MECHANISM,
+    h_key: CK_OBJECT_HANDLE,
+) -> CK_RV {
+    if p_mechanism.is_null() {
+        return CKR_ARGUMENTS_BAD;
+    }
+
+    match sign_init(h_session, p_mechanism, h_key) {
+        Ok(()) => CKR_OK,
+        Err(FrontendError::NotInitialized) => CKR_CRYPTOKI_NOT_INITIALIZED,
+        Err(err) => {
+            if let FrontendError::Internal(ref msg) = err {
+                error!("pkcs11 sign_init internal error: {msg}");
+            }
+            translate_error(err)
+        }
+    }
+}
+
+#[unsafe(no_mangle)]
+#[allow(clippy::not_unsafe_ptr_arg_deref)]
+pub extern "C" fn C_Sign(
+    h_session: CK_SESSION_HANDLE,
+    p_data: CK_BYTE_PTR,
+    ul_data_len: CK_ULONG,
+    p_signature: CK_BYTE_PTR,
+    pul_signature_len: CK_ULONG_PTR,
+) -> CK_RV {
+    if p_data.is_null() || pul_signature_len.is_null() {
+        return CKR_ARGUMENTS_BAD;
+    }
+
+    match sign(
+        h_session,
+        p_data,
+        ul_data_len,
+        p_signature,
+        pul_signature_len,
+    ) {
+        Ok(()) => CKR_OK,
+        Err(FrontendError::NotInitialized) => CKR_CRYPTOKI_NOT_INITIALIZED,
+        Err(err) => {
+            if let FrontendError::Internal(ref msg) = err {
+                error!("pkcs11 sign internal error: {msg}");
+            }
+            translate_error(err)
+        }
+    }
+}
+
+#[unsafe(no_mangle)]
+#[allow(clippy::not_unsafe_ptr_arg_deref)]
+pub extern "C" fn C_VerifyInit(
+    h_session: CK_SESSION_HANDLE,
+    p_mechanism: *mut cryptoki_sys::CK_MECHANISM,
+    h_key: CK_OBJECT_HANDLE,
+) -> CK_RV {
+    if p_mechanism.is_null() {
+        return CKR_ARGUMENTS_BAD;
+    }
+
+    match verify_init(h_session, p_mechanism, h_key) {
+        Ok(()) => CKR_OK,
+        Err(FrontendError::NotInitialized) => CKR_CRYPTOKI_NOT_INITIALIZED,
+        Err(err) => {
+            if let FrontendError::Internal(ref msg) = err {
+                error!("pkcs11 verify_init internal error: {msg}");
+            }
+            translate_error(err)
+        }
+    }
+}
+
+#[unsafe(no_mangle)]
+#[allow(clippy::not_unsafe_ptr_arg_deref)]
+pub extern "C" fn C_Verify(
+    h_session: CK_SESSION_HANDLE,
+    p_data: CK_BYTE_PTR,
+    ul_data_len: CK_ULONG,
+    p_signature: CK_BYTE_PTR,
+    ul_signature_len: CK_ULONG,
+) -> CK_RV {
+    if p_data.is_null() || p_signature.is_null() {
+        return CKR_ARGUMENTS_BAD;
+    }
+
+    match verify(
+        h_session,
+        p_data,
+        ul_data_len,
+        p_signature,
+        ul_signature_len,
+    ) {
+        Ok(()) => CKR_OK,
+        Err(FrontendError::NotInitialized) => CKR_CRYPTOKI_NOT_INITIALIZED,
+        Err(err) => {
+            if let FrontendError::Internal(ref msg) = err {
+                error!("pkcs11 verify internal error: {msg}");
+            }
+            translate_error(err)
+        }
+    }
+}
+
+#[unsafe(no_mangle)]
+#[allow(clippy::not_unsafe_ptr_arg_deref)]
+pub extern "C" fn C_EncryptInit(
+    h_session: CK_SESSION_HANDLE,
+    p_mechanism: *mut cryptoki_sys::CK_MECHANISM,
+    h_key: CK_OBJECT_HANDLE,
+) -> CK_RV {
+    if p_mechanism.is_null() {
+        return CKR_ARGUMENTS_BAD;
+    }
+
+    match encrypt_init(h_session, p_mechanism, h_key) {
+        Ok(()) => CKR_OK,
+        Err(FrontendError::NotInitialized) => CKR_CRYPTOKI_NOT_INITIALIZED,
+        Err(err) => {
+            if let FrontendError::Internal(ref msg) = err {
+                error!("pkcs11 encrypt_init internal error: {msg}");
+            }
+            translate_error(err)
+        }
+    }
+}
+
+#[unsafe(no_mangle)]
+#[allow(clippy::not_unsafe_ptr_arg_deref)]
+pub extern "C" fn C_Encrypt(
+    h_session: CK_SESSION_HANDLE,
+    p_data: CK_BYTE_PTR,
+    ul_data_len: CK_ULONG,
+    p_encrypted_data: CK_BYTE_PTR,
+    pul_encrypted_data_len: CK_ULONG_PTR,
+) -> CK_RV {
+    if p_data.is_null() || pul_encrypted_data_len.is_null() {
+        return CKR_ARGUMENTS_BAD;
+    }
+
+    match encrypt(
+        h_session,
+        p_data,
+        ul_data_len,
+        p_encrypted_data,
+        pul_encrypted_data_len,
+    ) {
+        Ok(()) => CKR_OK,
+        Err(FrontendError::NotInitialized) => CKR_CRYPTOKI_NOT_INITIALIZED,
+        Err(err) => {
+            if let FrontendError::Internal(ref msg) = err {
+                error!("pkcs11 encrypt internal error: {msg}");
+            }
+            translate_error(err)
+        }
+    }
+}
+
+#[unsafe(no_mangle)]
+#[allow(clippy::not_unsafe_ptr_arg_deref)]
+pub extern "C" fn C_DecryptInit(
+    h_session: CK_SESSION_HANDLE,
+    p_mechanism: *mut cryptoki_sys::CK_MECHANISM,
+    h_key: CK_OBJECT_HANDLE,
+) -> CK_RV {
+    if p_mechanism.is_null() {
+        return CKR_ARGUMENTS_BAD;
+    }
+
+    match decrypt_init(h_session, p_mechanism, h_key) {
+        Ok(()) => CKR_OK,
+        Err(FrontendError::NotInitialized) => CKR_CRYPTOKI_NOT_INITIALIZED,
+        Err(err) => {
+            if let FrontendError::Internal(ref msg) = err {
+                error!("pkcs11 decrypt_init internal error: {msg}");
+            }
+            translate_error(err)
+        }
+    }
+}
+
+#[unsafe(no_mangle)]
+#[allow(clippy::not_unsafe_ptr_arg_deref)]
+pub extern "C" fn C_Decrypt(
+    h_session: CK_SESSION_HANDLE,
+    p_encrypted_data: CK_BYTE_PTR,
+    ul_encrypted_data_len: CK_ULONG,
+    p_data: CK_BYTE_PTR,
+    pul_data_len: CK_ULONG_PTR,
+) -> CK_RV {
+    if p_encrypted_data.is_null() || pul_data_len.is_null() {
+        return CKR_ARGUMENTS_BAD;
+    }
+
+    match decrypt(
+        h_session,
+        p_encrypted_data,
+        ul_encrypted_data_len,
+        p_data,
+        pul_data_len,
+    ) {
+        Ok(()) => CKR_OK,
+        Err(FrontendError::NotInitialized) => CKR_CRYPTOKI_NOT_INITIALIZED,
+        Err(err) => {
+            if let FrontendError::Internal(ref msg) = err {
+                error!("pkcs11 decrypt internal error: {msg}");
+            }
+            translate_error(err)
+        }
+    }
+}
 #[unsafe(no_mangle)]
 #[allow(clippy::not_unsafe_ptr_arg_deref)]
 pub extern "C" fn C_GetAttributeValue(
@@ -809,7 +1397,10 @@ pub extern "C" fn C_GetAttributeValue(
 }
 
 /// Open a new session
-pub fn open_session(slot_id: CK_SLOT_ID, flags: CK_FLAGS) -> Result<CK_SESSION_HANDLE, FrontendError> {
+pub fn open_session(
+    slot_id: CK_SLOT_ID,
+    flags: CK_FLAGS,
+) -> Result<CK_SESSION_HANDLE, FrontendError> {
     let mut guard = STATE.write();
     let context = guard
         .context
@@ -878,6 +1469,23 @@ pub extern "C" fn C_OpenSession(
     }
 }
 
+pub fn close_session(session_handle: CK_SESSION_HANDLE) -> Result<(), FrontendError> {
+    let mut guard = STATE.write();
+    let context = guard
+        .context
+        .as_mut()
+        .ok_or(FrontendError::NotInitialized)?;
+    let mut context = context
+        .lock()
+        .map_err(|_| FrontendError::Internal("Failed to lock context".to_string()))?;
+
+    context
+        .sessions
+        .remove(&session_handle)
+        .ok_or_else(|| FrontendError::Internal(format!("Session {} not found", session_handle)))?;
+    Ok(())
+}
+
 #[unsafe(no_mangle)]
 #[allow(clippy::not_unsafe_ptr_arg_deref)]
 pub extern "C" fn C_CloseSession(h_session: CK_SESSION_HANDLE) -> CK_RV {
@@ -937,8 +1545,13 @@ pub fn logout(session_handle: CK_SESSION_HANDLE) -> Result<(), FrontendError> {
         .get_mut(&session_handle)
         .ok_or_else(|| FrontendError::Internal(format!("Session {} not found", session_handle)))?;
 
-    // Clear the user type
+    // Clear the user type and reset session state
     session.user_type = None;
+    session.state = if session.flags & 0x00000002 != 0 {
+        2
+    } else {
+        0
+    }; // CKF_RW_SESSION -> CKS_RW_PUBLIC_SESSION, else CKS_RO_PUBLIC_SESSION
 
     Ok(())
 }
@@ -958,7 +1571,6 @@ pub extern "C" fn C_Logout(session_handle: CK_SESSION_HANDLE) -> CK_RV {
     }
 }
 
-
 /// Generate a key
 pub fn generate_key(
     session_handle: CK_SESSION_HANDLE,
@@ -975,11 +1587,12 @@ pub fn generate_key(
         .lock()
         .map_err(|_| FrontendError::Internal("Failed to lock context".to_string()))?;
 
-    // Find the session
-    let _session = context
-        .sessions
-        .get(&session_handle)
-        .ok_or_else(|| FrontendError::Internal(format!("Session {} not found", session_handle)))?;
+    let slot_id = {
+        let session = context.sessions.get(&session_handle).ok_or_else(|| {
+            FrontendError::Internal(format!("Session {} not found", session_handle))
+        })?;
+        session.slot_id
+    };
 
     // For now, we'll just return a dummy object handle
     // In a real implementation, we would:
@@ -987,69 +1600,178 @@ pub fn generate_key(
     // 2. Parse the template to get key attributes
     // 3. Generate the key using the crypto engine
     // 4. Store the key and return an object handle
-    
-    // Create a dummy object handle
+
+    // Create the object
     let object_handle = context.next_object_id;
-    // Note: In a real implementation, we would actually store the key
+    context.next_object_id += 1;
+
+    let object = ObjectInfo {
+        handle: object_handle,
+        session_handle,
+        slot_id,
+        key_id: None, // For now, no key stored
+    };
+
+    context.objects.insert(object_handle, object);
 
     Ok(object_handle)
 }
 
-#[unsafe(no_mangle)]
-#[allow(clippy::not_unsafe_ptr_arg_deref)]
-pub extern "C" fn C_GenerateKey(
-    h_session: CK_SESSION_HANDLE,
-    p_mechanism: *mut cryptoki_sys::CK_MECHANISM,
-    p_template: cryptoki_sys::CK_ATTRIBUTE_PTR,
-    ul_count: CK_ULONG,
-    ph_key: *mut CK_OBJECT_HANDLE,
-) -> CK_RV {
-    if p_mechanism.is_null() || ph_key.is_null() {
-        return CKR_ARGUMENTS_BAD;
+/// Initialize a signing operation
+pub fn sign_init(
+    session_handle: CK_SESSION_HANDLE,
+    mechanism: *mut cryptoki_sys::CK_MECHANISM,
+    key_handle: CK_OBJECT_HANDLE,
+) -> Result<(), FrontendError> {
+    let mut guard = STATE.write();
+    let context = guard
+        .context
+        .as_mut()
+        .ok_or(FrontendError::NotInitialized)?;
+    let mut context = context
+        .lock()
+        .map_err(|_| FrontendError::Internal("Failed to lock context".to_string()))?;
+
+    {
+        let session = context.sessions.get(&session_handle).ok_or_else(|| {
+            FrontendError::Internal(format!("Session {} not found", session_handle))
+        })?;
+
+        if session.user_type.is_none() {
+            return Err(FrontendError::Internal("Not logged in".to_string()));
+        }
     }
 
-    // Convert mechanism
-    let mechanism = unsafe { &*p_mechanism };
-    
-    // Convert template to bytes (simplified for now)
-    let template_bytes = if p_template.is_null() {
-        Vec::new()
-    } else {
-        unsafe {
-            std::slice::from_raw_parts(p_template as *const u8, (ul_count * std::mem::size_of::<cryptoki_sys::CK_ATTRIBUTE>() as CK_ULONG) as usize).to_vec()
+    {
+        let object = context
+            .objects
+            .get(&key_handle)
+            .ok_or_else(|| FrontendError::Internal(format!("Object {} not found", key_handle)))?;
+
+        if object.session_handle != session_handle {
+            return Err(FrontendError::Internal(
+                "Object does not belong to this session".to_string(),
+            ));
+        }
+    }
+
+    let mechanism_type = unsafe { (*mechanism).mechanism };
+
+    let session = context
+        .sessions
+        .get_mut(&session_handle)
+        .ok_or_else(|| FrontendError::Internal(format!("Session {} not found", session_handle)))?;
+    session.active_operation = Some(ActiveOperation::Sign {
+        mechanism_type,
+        key_handle,
+    });
+
+    Ok(())
+}
+
+/// Perform a signing operation
+pub fn sign(
+    session_handle: CK_SESSION_HANDLE,
+    _data: CK_BYTE_PTR,
+    _data_len: CK_ULONG,
+    signature: CK_BYTE_PTR,
+    signature_len: CK_ULONG_PTR,
+) -> Result<(), FrontendError> {
+    let mut guard = STATE.write();
+    let context = guard
+        .context
+        .as_mut()
+        .ok_or(FrontendError::NotInitialized)?;
+    let mut context = context
+        .lock()
+        .map_err(|_| FrontendError::Internal("Failed to lock context".to_string()))?;
+
+    // Find the session
+    let session = context
+        .sessions
+        .get_mut(&session_handle)
+        .ok_or_else(|| FrontendError::Internal(format!("Session {} not found", session_handle)))?;
+
+    // Get active operation
+    let active_op = session
+        .active_operation
+        .take()
+        .ok_or_else(|| FrontendError::Internal("No active operation".to_string()))?;
+
+    let key_handle = match active_op {
+        ActiveOperation::Sign {
+            mechanism_type: _,
+            key_handle,
+        } => key_handle,
+        _ => {
+            return Err(FrontendError::Internal(
+                "Wrong active operation".to_string(),
+            ));
         }
     };
 
-    match generate_key(h_session, mechanism, &template_bytes, ul_count) {
-        Ok(object_handle) => {
-            unsafe {
-                *ph_key = object_handle;
+    // Find the object
+    let object = context
+        .objects
+        .get(&key_handle)
+        .ok_or_else(|| FrontendError::Internal(format!("Object {} not found", key_handle)))?;
+
+    if object.session_handle != session_handle {
+        return Err(FrontendError::Internal(
+            "Object does not belong to this session".to_string(),
+        ));
+    }
+
+    // For dummy implementation, return fixed size signature
+    let sig_size = 256; // Assume RSA-2048
+    unsafe {
+        if signature.is_null() {
+            *signature_len = sig_size;
+        } else {
+            if *signature_len < sig_size {
+                return Err(FrontendError::Internal(
+                    "Signature buffer too small".to_string(),
+                ));
             }
-            CKR_OK
-        }
-        Err(FrontendError::NotInitialized) => CKR_CRYPTOKI_NOT_INITIALIZED,
-        Err(err) => {
-            if let FrontendError::Internal(ref msg) = err {
-                error!("pkcs11 generate_key internal error: {msg}");
-            }
-            translate_error(err)
+            // Fill with dummy signature
+            std::ptr::write_bytes(signature, 0xAB, sig_size as usize);
+            *signature_len = sig_size;
         }
     }
+
+    Ok(())
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
 
-    fn cleanup() {
-        // Force cleanup of global state
-        let mut guard = STATE.write();
-        guard.context = None;
+    static TEST_MUTEX: once_cell::sync::Lazy<std::sync::Mutex<()>> =
+        once_cell::sync::Lazy::new(|| std::sync::Mutex::new(()));
+
+    struct TestStateGuard {
+        _lock: std::sync::MutexGuard<'static, ()>,
+    }
+
+    impl Drop for TestStateGuard {
+        fn drop(&mut self) {
+            let mut guard = STATE.write();
+            guard.context = None;
+        }
+    }
+
+    fn cleanup() -> TestStateGuard {
+        let lock = TEST_MUTEX.lock().expect("test mutex poisoned");
+        {
+            let mut guard = STATE.write();
+            guard.context = None;
+        }
+        TestStateGuard { _lock: lock }
     }
 
     #[test]
     fn initialize_and_finalize_roundtrip() {
-        cleanup();
+        let _guard = cleanup();
         initialize(std::ptr::null_mut()).expect("init");
         finalize().expect("finalize");
         assert_eq!(
@@ -1060,7 +1782,7 @@ mod tests {
 
     #[test]
     fn double_initialize_is_rejected() {
-        cleanup();
+        let _guard = cleanup();
         initialize(std::ptr::null_mut()).expect("init");
         let rv = translate_error(initialize(std::ptr::null_mut()).unwrap_err());
         assert_eq!(rv, CKR_CRYPTOKI_ALREADY_INITIALIZED);
@@ -1069,30 +1791,26 @@ mod tests {
 
     #[test]
     fn get_slot_list_works() {
-        cleanup();
+        let _guard = cleanup();
         initialize(std::ptr::null_mut()).expect("init");
 
         // First call to get the count
         let mut count = 0u64;
-        let rv = unsafe {
-            C_GetSlotList(
-                0, // token_present
-                std::ptr::null_mut(), // null buffer to get count
-                &mut count,
-            )
-        };
+        let rv = C_GetSlotList(
+            0,                    // token_present
+            std::ptr::null_mut(), // null buffer to get count
+            &mut count,
+        );
         assert_eq!(rv, CKR_OK);
         assert_eq!(count, 1); // We have one slot
 
         // Second call with properly sized buffer
         let mut slot_list = vec![0u64; count as usize];
-        let rv = unsafe {
-            C_GetSlotList(
-                0, // token_present
-                slot_list.as_mut_ptr(),
-                &mut count,
-            )
-        };
+        let rv = C_GetSlotList(
+            0, // token_present
+            slot_list.as_mut_ptr(),
+            &mut count,
+        );
         assert_eq!(rv, CKR_OK);
         assert_eq!(count, 1);
         assert_eq!(slot_list[0], 1); // Slot ID 1
@@ -1102,12 +1820,12 @@ mod tests {
 
     #[test]
     fn get_slot_info_works() {
-        cleanup();
+        let _guard = cleanup();
         initialize(std::ptr::null_mut()).expect("init");
 
         let mut slot_info = unsafe { std::mem::zeroed() };
 
-        let rv = unsafe { C_GetSlotInfo(1, &mut slot_info) };
+        let rv = C_GetSlotInfo(1, &mut slot_info);
 
         assert_eq!(rv, CKR_OK);
         // Check that the slot description contains our expected string
@@ -1123,12 +1841,12 @@ mod tests {
 
     #[test]
     fn get_token_info_works() {
-        cleanup();
+        let _guard = cleanup();
         initialize(std::ptr::null_mut()).expect("init");
 
         let mut token_info = unsafe { std::mem::zeroed() };
 
-        let rv = unsafe { C_GetTokenInfo(1, &mut token_info) };
+        let rv = C_GetTokenInfo(1, &mut token_info);
 
         assert_eq!(rv, CKR_OK);
         // Check that the label contains our expected string
@@ -1144,30 +1862,26 @@ mod tests {
 
     #[test]
     fn get_mechanism_list_works() {
-        cleanup();
+        let _guard = cleanup();
         initialize(std::ptr::null_mut()).expect("init");
 
         // First call to get the count
         let mut count = 0u64;
-        let rv = unsafe {
-            C_GetMechanismList(
-                1, // slot_id
-                std::ptr::null_mut(), // null buffer to get count
-                &mut count,
-            )
-        };
+        let rv = C_GetMechanismList(
+            1,                    // slot_id
+            std::ptr::null_mut(), // null buffer to get count
+            &mut count,
+        );
         assert_eq!(rv, CKR_OK);
         assert!(count > 0); // We should have some mechanisms
 
         // Second call with properly sized buffer
         let mut mechanism_list = vec![0u64; count as usize];
-        let rv = unsafe {
-            C_GetMechanismList(
-                1, // slot_id
-                mechanism_list.as_mut_ptr(),
-                &mut count,
-            )
-        };
+        let rv = C_GetMechanismList(
+            1, // slot_id
+            mechanism_list.as_mut_ptr(),
+            &mut count,
+        );
         assert_eq!(rv, CKR_OK);
         assert!(count > 0);
 
@@ -1176,31 +1890,29 @@ mod tests {
 
     #[test]
     fn session_lifecycle_works() {
-        cleanup();
+        let _guard = cleanup();
         initialize(std::ptr::null_mut()).expect("init");
 
         // Open session
         let mut session_handle = 0;
-        let rv = unsafe {
-            C_OpenSession(
-                1, // slot_id
-                0, // flags (read-only)
-                std::ptr::null_mut(),
-                0, // ulApplicationDataLen
-                &mut session_handle,
-            )
-        };
+        let rv = C_OpenSession(
+            1, // slot_id
+            0, // flags (read-only)
+            std::ptr::null_mut(),
+            0, // ulApplicationDataLen
+            &mut session_handle,
+        );
         assert_eq!(rv, CKR_OK);
         assert_ne!(session_handle, 0);
 
         // Get session info
         let mut session_info = unsafe { std::mem::zeroed() };
-        let rv = unsafe { C_GetSessionInfo(session_handle, &mut session_info) };
+        let rv = C_GetSessionInfo(session_handle, &mut session_info);
         assert_eq!(rv, CKR_OK);
         assert_eq!(session_info.slotID, 1);
 
         // Close session
-        let rv = unsafe { C_CloseSession(session_handle) };
+        let rv = C_CloseSession(session_handle);
         assert_eq!(rv, CKR_OK);
 
         finalize().expect("finalize");
@@ -1208,32 +1920,28 @@ mod tests {
 
     #[test]
     fn key_generation_and_operations_work() {
-        cleanup();
+        let _guard = cleanup();
         initialize(std::ptr::null_mut()).expect("init");
 
         // Open session
         let mut session_handle = 0;
-        let rv = unsafe {
-            C_OpenSession(
-                1, // slot_id
-                4, // CKF_RW_SESSION
-                std::ptr::null_mut(),
-                0, // ulApplicationDataLen
-                &mut session_handle,
-            )
-        };
+        let rv = C_OpenSession(
+            1, // slot_id
+            4, // CKF_RW_SESSION
+            std::ptr::null_mut(),
+            0, // ulApplicationDataLen
+            &mut session_handle,
+        );
         assert_eq!(rv, CKR_OK);
 
         // Login as user
         let pin = b"1234";
-        let rv = unsafe {
-            C_Login(
-                session_handle,
-                1, // CKU_USER
-                pin.as_ptr() as *mut u8,
-                pin.len() as u64,
-            )
-        };
+        let rv = C_Login(
+            session_handle,
+            1, // CKU_USER
+            pin.as_ptr() as *mut u8,
+            pin.len() as u64,
+        );
         assert_eq!(rv, CKR_OK);
 
         // Generate AES key
@@ -1244,15 +1952,13 @@ mod tests {
             ulParameterLen: 0,
         };
 
-        let rv = unsafe {
-            C_GenerateKey(
-                session_handle,
-                &mut mechanism,
-                std::ptr::null_mut(), // template
-                0, // template_len
-                &mut key_handle,
-            )
-        };
+        let rv = C_GenerateKey(
+            session_handle,
+            &mut mechanism,
+            std::ptr::null_mut(), // template
+            0,                    // template_len
+            &mut key_handle,
+        );
         assert_eq!(rv, CKR_OK);
         assert_ne!(key_handle, 0);
 
@@ -1262,22 +1968,15 @@ mod tests {
             pValue: std::ptr::null_mut(),
             ulValueLen: 0,
         }];
-        let rv = unsafe {
-            C_GetAttributeValue(
-                session_handle,
-                key_handle,
-                template.as_mut_ptr(),
-                1,
-            )
-        };
+        let rv = C_GetAttributeValue(session_handle, key_handle, template.as_mut_ptr(), 1);
         assert_eq!(rv, CKR_OK);
 
         // Logout
-        let rv = unsafe { C_Logout(session_handle) };
+        let rv = C_Logout(session_handle);
         assert_eq!(rv, CKR_OK);
 
         // Close session
-        let rv = unsafe { C_CloseSession(session_handle) };
+        let rv = C_CloseSession(session_handle);
         assert_eq!(rv, CKR_OK);
 
         finalize().expect("finalize");

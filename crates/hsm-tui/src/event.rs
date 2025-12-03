@@ -6,7 +6,10 @@
 
 use crate::ui::input::{KeyAction, KeyBindings};
 use anyhow::Result;
-use crokey::{crossterm::event::{self, Event, KeyEvent}, KeyCombination};
+use crokey::{
+    KeyCombination,
+    crossterm::event::{self, Event, KeyEvent},
+};
 
 /// Event handler for the application
 #[derive(Debug)]
@@ -86,7 +89,8 @@ impl EventLoop {
             match event::read()? {
                 Event::Key(key_event) => {
                     if let Some(action) = self.handler.handle_key_event(key_event)
-                        && !callback(action)? {
+                        && !callback(action)?
+                    {
                         break;
                     }
                 }

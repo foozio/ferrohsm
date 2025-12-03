@@ -1,13 +1,12 @@
-# FerroHSM v0.3.0
+# FerroHSM v0.4.0
 
 FerroHSM is a software-based Hardware Security Module implemented in Rust with Secure by Design principles. It offers cryptographic key management, tamper-evident storage, role-based access control, and multiple interfaces for integration with modern platforms.
 
-## What's New in v0.3.0
+## What's New in v0.4.0
 
-- **PKCS#11 Interface**: Full PKCS#11 v2.40 compliant interface for legacy application compatibility
-- **Enhanced TUI**: Advanced text-based user interface with ATAC-inspired modular architecture, syntax highlighting, customizable themes, and comprehensive interactive management
-- **Homebrew Distribution**: One-command installation for macOS and Linux users
-- **Comprehensive Documentation**: Complete API reference and user guides
+- **Unified Versioning**: All binaries and documentation now derive their version metadata directly from crate definitions, preventing drift across surfaces like the TUI and installers.
+- **PKCS#11 Alignment**: Updated SLH-DSA parameter naming and metadata handling to track the latest specs and improve hybrid key interoperability.
+- **Release Tooling Refresh**: Homebrew assets, installation scripts, and tests have been refreshed for 0.4.0 to keep installation paths and automation up to date.
 
 ## Crate Overview
 

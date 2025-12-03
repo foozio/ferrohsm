@@ -48,8 +48,8 @@ fs2 = "0.4"
 directories = "5"
 toml = "0.8"
 mlua = { version = "0.9", features = ["luau", "vendored"] }
-p256 = { version = "0.13", features = ["pem", "ecdsa"] }
-p384 = { version = "0.13", features = ["pem", "ecdsa"] }
+p256 = { version = "0.13", features = ["pem", "ecdsa", "ecdh"] }
+p384 = { version = "0.13", features = ["pem", "ecdsa", "ecdh"] }
 aes-gcm = "0.10"
 hex = "0.4"
 base64 = "0.22"

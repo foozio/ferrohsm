@@ -1,12 +1,12 @@
 use std::process::{Command, Stdio};
-use std::time::Duration;
 use std::thread;
+use std::time::Duration;
 
 #[test]
 fn test_tui_binary_builds_and_runs() {
     // Build the hsm-tui binary
     let cargo_build = Command::new("cargo")
-        .args(&["build", "-p", "hsm-tui"])
+        .args(["build", "-p", "hsm-tui"])
         .output()
         .expect("Failed to build hsm-tui");
 
@@ -17,7 +17,7 @@ fn test_tui_binary_builds_and_runs() {
 fn test_tui_can_start_and_exit() {
     // Build first
     let cargo_build = Command::new("cargo")
-        .args(&["build", "-p", "hsm-tui"])
+        .args(["build", "-p", "hsm-tui"])
         .output()
         .expect("Failed to build hsm-tui");
 
@@ -58,24 +58,31 @@ fn test_tui_can_start_and_exit() {
 fn test_tui_help_argument() {
     // Test that --help works
     let output = Command::new("cargo")
-        .args(&["run", "-p", "hsm-tui", "--", "--help"])
+        .args(["run", "-p", "hsm-tui", "--", "--help"])
         .output()
         .expect("Failed to run hsm-tui --help");
 
     assert!(output.status.success(), "hsm-tui --help should succeed");
     let stdout = String::from_utf8_lossy(&output.stdout);
-    assert!(stdout.contains("FerroHSM TUI"), "Help should contain app name");
+    assert!(
+        stdout.contains("FerroHSM TUI"),
+        "Help should contain app name"
+    );
 }
 
 #[test]
 fn test_tui_version_argument() {
     // Test that --version works
     let output = Command::new("cargo")
-        .args(&["run", "-p", "hsm-tui", "--", "--version"])
+        .args(["run", "-p", "hsm-tui", "--", "--version"])
         .output()
         .expect("Failed to run hsm-tui --version");
 
     assert!(output.status.success(), "hsm-tui --version should succeed");
     let stdout = String::from_utf8_lossy(&output.stdout);
-    assert!(stdout.contains("0.3.0"), "Version should be 0.3.0");
+    assert!(
+        stdout.contains(env!("CARGO_PKG_VERSION")),
+        "Version should be {}",
+        env!("CARGO_PKG_VERSION")
+    );
 }

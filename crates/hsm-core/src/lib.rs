@@ -5,9 +5,11 @@
 pub mod approvals;
 pub mod attributes;
 pub mod audit;
+pub mod checkpoint;
 pub mod crypto;
 pub mod error;
 pub mod fs_utils;
+pub mod key_rotation;
 pub mod models;
 pub mod pkcs11;
 pub mod policy;
@@ -32,8 +34,10 @@ pub use attributes::{AttributeId, AttributeSet, AttributeTemplate, AttributeValu
 pub use audit::{
     AuditEvent, AuditLog, AuditRecord, AuditSink, FileAuditLog, SqliteAuditLog, compute_event_hash,
 };
+pub use checkpoint::CheckpointScheduler;
 pub use crypto::{CryptoEngine, CryptoOperation, KeyOperationResult};
 pub use error::{HsmError, HsmResult};
+pub use key_rotation::KeyRotationScheduler;
 pub use models::{
     AuthContext, KeyAlgorithm, KeyGenerationRequest, KeyHandle, KeyId, KeyListPage, KeyListQuery,
     KeyMaterialType, KeyMetadata, KeyPurpose, KeyState, KeyUsage, OperationContext, TamperStatus,

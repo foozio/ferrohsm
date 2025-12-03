@@ -11,6 +11,8 @@ pub struct Session {
     pub state: CK_STATE,
     pub flags: CK_FLAGS,
     pub user_type: Option<CK_USER_TYPE>,
+    pub active_mechanism: Option<CK_MECHANISM_TYPE>,
+    pub active_key: Option<CK_OBJECT_HANDLE>,
 }
 
 /// Manages active sessions
@@ -48,6 +50,8 @@ impl SessionManager {
             state: CK_STATE::CKS_RO_PUBLIC_SESSION,
             flags,
             user_type: None,
+            active_mechanism: None,
+            active_key: None,
         };
 
         self.sessions.insert(session_id, session);
@@ -64,6 +68,10 @@ impl SessionManager {
 
     pub fn get_session(&self, session_handle: CK_SESSION_HANDLE) -> Option<&Session> {
         self.sessions.get(&session_handle)
+    }
+
+    pub fn get_mut_session(&mut self, session_handle: CK_SESSION_HANDLE) -> Option<&mut Session> {
+        self.sessions.get_mut(&session_handle)
     }
     
     /// Login to a session

@@ -3,7 +3,7 @@ use hsm_core::{
     KeyMaterialType,
     attributes::{AttributeSet, AttributeTemplate, AttributeValue},
     models::{KeyAlgorithm, KeyMetadata, KeyPurpose, KeyState, TamperStatus},
-    storage::{FileKeyStore, KeyRecord, MemoryKeyStore, SealedKeyMaterial},
+    storage::{FileKeyStore, KeyRecord, KeyStore, MemoryKeyStore, SealedKeyMaterial},
 };
 use tempfile::TempDir;
 use time::OffsetDateTime;

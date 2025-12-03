@@ -165,12 +165,16 @@ impl Theme {
 
     /// Get style for headers
     pub fn header_style(&self) -> Style {
-        Style::default().fg(self.text.clone().into()).bg(self.primary.clone().into())
+        Style::default()
+            .fg(self.text.clone().into())
+            .bg(self.primary.clone().into())
     }
 
     /// Get style for footers
     pub fn footer_style(&self) -> Style {
-        Style::default().fg(self.text.clone().into()).bg(self.secondary.clone().into())
+        Style::default()
+            .fg(self.text.clone().into())
+            .bg(self.secondary.clone().into())
     }
 }
 
@@ -198,11 +202,11 @@ pub fn monokai_theme() -> Theme {
     Theme {
         primary: RatatuiColor::Rgb(249, 38, 114).into(), // Pink
         secondary: RatatuiColor::Rgb(102, 217, 239).into(), // Cyan
-        accent: RatatuiColor::Rgb(166, 226, 46).into(), // Green
-        error: RatatuiColor::Rgb(249, 38, 114).into(), // Pink
+        accent: RatatuiColor::Rgb(166, 226, 46).into(),  // Green
+        error: RatatuiColor::Rgb(249, 38, 114).into(),   // Pink
         success: RatatuiColor::Rgb(166, 226, 46).into(), // Green
-        text: RatatuiColor::Rgb(248, 248, 242).into(), // Light gray
+        text: RatatuiColor::Rgb(248, 248, 242).into(),   // Light gray
         background: RatatuiColor::Rgb(39, 40, 34).into(), // Dark gray
-        muted: RatatuiColor::Rgb(117, 113, 94).into(), // Gray
+        muted: RatatuiColor::Rgb(117, 113, 94).into(),   // Gray
     }
 }

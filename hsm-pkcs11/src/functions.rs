@@ -6,7 +6,8 @@ use crate::types::hsm_error_to_ckr;
 use crate::object::ObjectManager;
 use cryptoki::types::*;
 use std::sync::Mutex;
-use hsm_core::crypto::CryptoEngine;
+use hsm_core::crypto::{CryptoEngine, CryptoOperation, KeyOperationResult};
+use hsm_core::models::OperationContext;
 
 use crate::hardware::SoftHsmAdapter;
 
@@ -370,7 +371,10 @@ pub extern "C" fn C_GenerateKey(
         Ok(generated) => {
             // Add the key to the object manager
             let mut object_manager = OBJECT_MANAGER.lock().unwrap();
-            let handle = object_manager.add_key_object(&generated.metadata);
+            let record = CRYPTO_ENGINE
+                .seal_key(&generated.metadata, generated.material)
+                .unwrap();
+            let handle = object_manager.add_key_object(record);
 
             unsafe {
                 *phKey = handle;
@@ -641,6 +645,54 @@ pub extern "C" fn C_Logout(hSession: CK_SESSION_HANDLE) -> CK_RV {
     }
 }
 
+/// Initialize an encryption operation
+#[no_mangle]
+pub extern "C" fn C_EncryptInit(
+    hSession: CK_SESSION_HANDLE,
+    pMechanism: CK_MECHANISM_PTR,
+    hKey: CK_OBJECT_HANDLE,
+) -> CK_RV {
+    if pMechanism.is_null() {
+        return CK_RV::CKR_ARGUMENTS_BAD;
+    }
+
+    let mut session_manager = SESSION_MANAGER.lock().unwrap();
+    let session = match session_manager.get_mut_session(hSession) {
+        Some(session) => session,
+        None => return CK_RV::CKR_SESSION_HANDLE_INVALID,
+    };
+
+    let mechanism = unsafe { *pMechanism };
+    session.active_mechanism = Some(mechanism.mechanism);
+    session.active_key = Some(hKey);
+
+    CK_RV::CKR_OK
+}
+
+/// Initialize a decryption operation
+#[no_mangle]
+pub extern "C" fn C_DecryptInit(
+    hSession: CK_SESSION_HANDLE,
+    pMechanism: CK_MECHANISM_PTR,
+    hKey: CK_OBJECT_HANDLE,
+) -> CK_RV {
+    if pMechanism.is_null() {
+        return CK_RV::CKR_ARGUMENTS_BAD;
+    }
+
+    let mut session_manager = SESSION_MANAGER.lock().unwrap();
+    let session = match session_manager.get_mut_session(hSession) {
+        Some(session) => session,
+        None => return CK_RV::CKR_SESSION_HANDLE_INVALID,
+    };
+
+    let mechanism = unsafe { *pMechanism };
+    session.active_mechanism = Some(mechanism.mechanism);
+    session.active_key = Some(hKey);
+
+    CK_RV::CKR_OK
+}
+
 /// Encrypt data
 #[no_mangle]
 pub extern "C" fn C_Encrypt(
@@ -653,57 +705,58 @@ pub extern "C" fn C_Encrypt(
     if pData.is_null() || pulEncryptedDataLen.is_null() {
         return CK_RV::CKR_ARGUMENTS_BAD;
     }
-    
-    // Get the session
+
     let session_manager = SESSION_MANAGER.lock().unwrap();
     let session = match session_manager.get_session(hSession) {
         Some(session) => session,
         None => return CK_RV::CKR_SESSION_HANDLE_INVALID,
     };
-    
-    // Try to use SoftHSM adapter
-    let soft_hsm = SOFT_HSM_ADAPTER.lock().unwrap();
-    if let Some(adapter) = soft_hsm.as_ref() {
-        // For now, we'll just return a placeholder encrypted data
-        // In a full implementation, we would use the SoftHSM adapter to encrypt the data
-        unsafe {
-            if !pEncryptedData.is_null() {
-                // Copy encrypted data to output buffer
-                let encrypted_data = [0x01, 0x02, 0x03, 0x04];
-                let encrypted_data_len = encrypted_data.len();
-                if *pulEncryptedDataLen < encrypted_data_len as CK_ULONG {
-                    *pulEncryptedDataLen = encrypted_data_len as CK_ULONG;
+
+    let key_handle = match session.active_key {
+        Some(handle) => handle,
+        None => return CK_RV::CKR_OPERATION_NOT_INITIALIZED,
+    };
+
+    let object_manager = OBJECT_MANAGER.lock().unwrap();
+    let object = match object_manager.get_object(key_handle) {
+        Some(object) => object,
+        None => return CK_RV::CKR_KEY_HANDLE_INVALID,
+    };
+
+    let key_material = match CRYPTO_ENGINE.open_key(&object.record) {
+        Ok(material) => material,
+        Err(e) => return hsm_error_to_ckr(e),
+    };
+
+    let plaintext = unsafe { std::slice::from_raw_parts(pData, ulDataLen as usize) };
+
+    let operation = CryptoOperation::Encrypt {
+        plaintext: plaintext.to_vec(),
+    };
+    let op_ctx = OperationContext::new();
+
+    match CRYPTO_ENGINE.perform(operation, &key_material, &op_ctx) {
+        Ok(KeyOperationResult::Encrypted { ciphertext, .. }) => {
+            unsafe {
+                if pEncryptedData.is_null() {
+                    *pulEncryptedDataLen = ciphertext.len() as CK_ULONG;
+                    return CK_RV::CKR_OK;
+                }
+                if *pulEncryptedDataLen < ciphertext.len() as CK_ULONG {
+                    *pulEncryptedDataLen = ciphertext.len() as CK_ULONG;
                     return CK_RV::CKR_BUFFER_TOO_SMALL;
                 }
-                
-                std::ptr::copy_nonoverlapping(encrypted_data.as_ptr(), pEncryptedData, encrypted_data_len);
-                *pulEncryptedDataLen = encrypted_data_len as CK_ULONG;
-            } else {
-                // Just return the required buffer size
-                *pulEncryptedDataLen = 4; // Placeholder encrypted data length
+                std::ptr::copy_nonoverlapping(
+                    ciphertext.as_ptr(),
+                    pEncryptedData,
+                    ciphertext.len(),
+                );
+                *pulEncryptedDataLen = ciphertext.len() as CK_ULONG;
             }
+            CK_RV::CKR_OK
         }
-        CK_RV::CKR_OK
-    } else {
-        // Fallback implementation
-        unsafe {
-            if !pEncryptedData.is_null() {
-                // Copy encrypted data to output buffer
-                let encrypted_data = [0x01, 0x02, 0x03, 0x04];
-                let encrypted_data_len = encrypted_data.len();
-                if *pulEncryptedDataLen < encrypted_data_len as CK_ULONG {
-                    *pulEncryptedDataLen = encrypted_data_len as CK_ULONG;
-                    return CK_RV::CKR_BUFFER_TOO_SMALL;
-                }
-                
-                std::ptr::copy_nonoverlapping(encrypted_data.as_ptr(), pEncryptedData, encrypted_data_len);
-                *pulEncryptedDataLen = encrypted_data_len as CK_ULONG;
-            } else {
-                // Just return the required buffer size
-                *pulEncryptedDataLen = 4; // Placeholder encrypted data length
-            }
-        }
-        CK_RV::CKR_OK
+        Ok(_) => CK_RV::CKR_GENERAL_ERROR,
+        Err(e) => hsm_error_to_ckr(e),
     }
 }
 
@@ -719,57 +772,66 @@ pub extern "C" fn C_Decrypt(
     if pEncryptedData.is_null() || pulDataLen.is_null() {
         return CK_RV::CKR_ARGUMENTS_BAD;
     }
-    
-    // Get the session
+
     let session_manager = SESSION_MANAGER.lock().unwrap();
     let session = match session_manager.get_session(hSession) {
         Some(session) => session,
         None => return CK_RV::CKR_SESSION_HANDLE_INVALID,
     };
-    
-    // Try to use SoftHSM adapter
-    let soft_hsm = SOFT_HSM_ADAPTER.lock().unwrap();
-    if let Some(adapter) = soft_hsm.as_ref() {
-        // For now, we'll just return a placeholder decrypted data
-        // In a full implementation, we would use the SoftHSM adapter to decrypt the data
-        unsafe {
-            if !pData.is_null() {
-                // Copy decrypted data to output buffer
-                let decrypted_data = [0x01, 0x02, 0x03, 0x04];
-                let decrypted_data_len = decrypted_data.len();
-                if *pulDataLen < decrypted_data_len as CK_ULONG {
-                    *pulDataLen = decrypted_data_len as CK_ULONG;
+
+    let key_handle = match session.active_key {
+        Some(handle) => handle,
+        None => return CK_RV::CKR_OPERATION_NOT_INITIALIZED,
+    };
+
+    let object_manager = OBJECT_MANAGER.lock().unwrap();
+    let object = match object_manager.get_object(key_handle) {
+        Some(object) => object,
+        None => return CK_RV::CKR_KEY_HANDLE_INVALID,
+    };
+
+    let key_material = match CRYPTO_ENGINE.open_key(&object.record) {
+        Ok(material) => material,
+        Err(e) => return hsm_error_to_ckr(e),
+    };
+
+    let ciphertext = unsafe { std::slice::from_raw_parts(pEncryptedData, ulEncryptedDataLen as usize) };
+
+    // The nonce should be part of the mechanism parameters, but for now we'll assume it's prepended to the ciphertext
+    if ciphertext.len() < 12 {
+        return CK_RV::CKR_ENCRYPTED_DATA_INVALID;
+    }
+    let (nonce, ciphertext) = ciphertext.split_at(12);
+
+    let operation = CryptoOperation::Decrypt {
+        ciphertext: ciphertext.to_vec(),
+        nonce: nonce.to_vec(),
+        associated_data: None,
+    };
+    let op_ctx = OperationContext::new();
+
+    match CRYPTO_ENGINE.perform(operation, &key_material, &op_ctx) {
+        Ok(KeyOperationResult::Decrypted { plaintext }) => {
+            unsafe {
+                if pData.is_null() {
+                    *pulDataLen = plaintext.len() as CK_ULONG;
+                    return CK_RV::CKR_OK;
+                }
+                if *pulDataLen < plaintext.len() as CK_ULONG {
+                    *pulDataLen = plaintext.len() as CK_ULONG;
                     return CK_RV::CKR_BUFFER_TOO_SMALL;
                 }
-                
-                std::ptr::copy_nonoverlapping(decrypted_data.as_ptr(), pData, decrypted_data_len);
-                *pulDataLen = decrypted_data_len as CK_ULONG;
-            } else {
-                // Just return the required buffer size
-                *pulDataLen = 4; // Placeholder decrypted data length
+                std::ptr::copy_nonoverlapping(
+                    plaintext.as_ptr(),
+                    pData,
+                    plaintext.len(),
+                );
+                *pulDataLen = plaintext.len() as CK_ULONG;
             }
+            CK_RV::CKR_OK
         }
-        CK_RV::CKR_OK
-    } else {
-        // Fallback implementation
-        unsafe {
-            if !pData.is_null() {
-                // Copy decrypted data to output buffer
-                let decrypted_data = [0x01, 0x02, 0x03, 0x04];
-                let decrypted_data_len = decrypted_data.len();
-                if *pulDataLen < decrypted_data_len as CK_ULONG {
-                    *pulDataLen = decrypted_data_len as CK_ULONG;
-                    return CK_RV::CKR_BUFFER_TOO_SMALL;
-                }
-                
-                std::ptr::copy_nonoverlapping(decrypted_data.as_ptr(), pData, decrypted_data_len);
-                *pulDataLen = decrypted_data_len as CK_ULONG;
-            } else {
-                // Just return the required buffer size
-                *pulDataLen = 4; // Placeholder decrypted data length
-            }
-        }
-        CK_RV::CKR_OK
+        Ok(_) => CK_RV::CKR_GENERAL_ERROR,
+        Err(e) => hsm_error_to_ckr(e),
     }
 }
 

@@ -12,12 +12,7 @@ use ratatui::{
     text::{Line, Span},
     widgets::{Block, Borders, Paragraph, Widget},
 };
-use syntect::{
-    highlighting::ThemeSet,
-    parsing::SyntaxSet,
-    util::LinesWithEndings,
-};
-
+use syntect::{highlighting::ThemeSet, parsing::SyntaxSet, util::LinesWithEndings};
 
 /// Syntax highlighter for JSON and other formats
 pub struct SyntaxHighlighter {
@@ -41,7 +36,9 @@ impl SyntaxHighlighter {
 
     /// Highlight text with specified syntax
     pub fn highlight_text(&self, text: &str, syntax_name: &str) -> Vec<Line> {
-        let syntax = self.syntax_set.find_syntax_by_name(syntax_name)
+        let syntax = self
+            .syntax_set
+            .find_syntax_by_name(syntax_name)
             .unwrap_or_else(|| self.syntax_set.find_syntax_plain_text());
 
         let theme = &self.theme_set.themes["base16-ocean.dark"];
@@ -51,7 +48,9 @@ impl SyntaxHighlighter {
         for line in LinesWithEndings::from(text) {
             let mut spans = Vec::new();
             let mut parsed = syntect::easy::HighlightLines::new(syntax, theme);
-            let ranges = parsed.highlight_line(line, &self.syntax_set).unwrap_or_default();
+            let ranges = parsed
+                .highlight_line(line, &self.syntax_set)
+                .unwrap_or_default();
 
             for (style, text) in ranges {
                 let color = Self::syntect_to_ratatui_color(style.foreground);
@@ -84,9 +83,7 @@ pub struct LoadingSpinner {
 impl LoadingSpinner {
     /// Create a new loading spinner
     pub fn new(message: String) -> Self {
-        Self {
-            message,
-        }
+        Self { message }
     }
 
     /// Update the spinner state
@@ -97,9 +94,7 @@ impl LoadingSpinner {
 
 impl Widget for LoadingSpinner {
     fn render(self, area: Rect, buf: &mut Buffer) {
-        let block = Block::default()
-            .borders(Borders::ALL)
-            .title("Loading");
+        let block = Block::default().borders(Borders::ALL).title("Loading");
 
         let inner_area = block.inner(area);
         block.render(area, buf);
@@ -109,7 +104,9 @@ impl Widget for LoadingSpinner {
         let spinner_idx = (std::time::SystemTime::now()
             .duration_since(std::time::UNIX_EPOCH)
             .unwrap()
-            .as_millis() / 100) as usize % spinner_chars.len();
+            .as_millis()
+            / 100) as usize
+            % spinner_chars.len();
         let spinner = spinner_chars[spinner_idx];
 
         let throbber_area = Rect {
@@ -232,7 +229,10 @@ impl Widget for StatusIndicator {
         if area.width > 4 {
             let label_width = area.width.saturating_sub(4);
             let label = if self.label.len() > label_width as usize {
-                format!("{}...", &self.label[..label_width.saturating_sub(3) as usize])
+                format!(
+                    "{}...",
+                    &self.label[..label_width.saturating_sub(3) as usize]
+                )
             } else {
                 self.label
             };

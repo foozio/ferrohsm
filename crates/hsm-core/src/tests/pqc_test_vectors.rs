@@ -87,7 +87,7 @@ pub const ML_DSA_135_TEST_VECTOR: MlDsaTestVector = MlDsaTestVector {
 
 // SLH-DSA-SHA2-128f test vector (placeholder)
 pub const SLH_DSA_SHA2_128F_TEST_VECTOR: SlhDsaTestVector = SlhDsaTestVector {
-    security_level: SlhDsaSecurityLevel::SlhDsaSha2128f,
+    security_level: SlhDsaSecurityLevel::SlhDsa128f,
     public_key: &[0u8; 32], // Approximate size for SLH-DSA-SHA2-128f public key
     private_key: &[0u8; 64], // Approximate size for SLH-DSA-SHA2-128f private key
     message: &[0u8; 32],    // Sample message
@@ -96,7 +96,7 @@ pub const SLH_DSA_SHA2_128F_TEST_VECTOR: SlhDsaTestVector = SlhDsaTestVector {
 
 // SLH-DSA-SHA2-256f test vector (placeholder)
 pub const SLH_DSA_SHA2_256F_TEST_VECTOR: SlhDsaTestVector = SlhDsaTestVector {
-    security_level: SlhDsaSecurityLevel::SlhDsaSha2256f,
+    security_level: SlhDsaSecurityLevel::SlhDsa256f,
     public_key: &[0u8; 64], // Approximate size for SLH-DSA-SHA2-256f public key
     private_key: &[0u8; 128], // Approximate size for SLH-DSA-SHA2-256f private key
     message: &[0u8; 32],    // Sample message

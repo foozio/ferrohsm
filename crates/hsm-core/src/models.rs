@@ -253,20 +253,49 @@ pub enum KeyMaterialType {
 
 impl std::fmt::Display for KeyMaterialType {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(f, "{:?}", self)
+        let label = match self {
+            KeyMaterialType::Symmetric => "Symmetric",
+            KeyMaterialType::Rsa => "Rsa",
+            KeyMaterialType::EcP256 => "EcP256",
+            KeyMaterialType::EcP384 => "EcP384",
+            KeyMaterialType::MlKem512 => "ML-KEM-512",
+            KeyMaterialType::MlKem768 => "ML-KEM-768",
+            KeyMaterialType::MlKem1024 => "ML-KEM-1024",
+            KeyMaterialType::MlDsa44 => "ML-DSA-44",
+            KeyMaterialType::MlDsa65 => "ML-DSA-65",
+            KeyMaterialType::MlDsa87 => "ML-DSA-87",
+            KeyMaterialType::SlhDsa128f => "SLH-DSA-128f",
+            KeyMaterialType::SlhDsa128s => "SLH-DSA-128s",
+            KeyMaterialType::SlhDsa192f => "SLH-DSA-192f",
+            KeyMaterialType::SlhDsa192s => "SLH-DSA-192s",
+            KeyMaterialType::SlhDsa256f => "SLH-DSA-256f",
+            KeyMaterialType::SlhDsa256s => "SLH-DSA-256s",
+            KeyMaterialType::HybridP256MlKem512 => "HybridP256MlKem512",
+            KeyMaterialType::HybridP256MlKem768 => "HybridP256MlKem768",
+            KeyMaterialType::HybridP384MlKem1024 => "HybridP384MlKem1024",
+            KeyMaterialType::HybridP256MlDsa44 => "HybridP256MlDsa44",
+            KeyMaterialType::HybridP256MlDsa65 => "HybridP256MlDsa65",
+            KeyMaterialType::HybridP384MlDsa87 => "HybridP384MlDsa87",
+        };
+        write!(f, "{label}")
     }
 }
 
 impl KeyMaterialType {
     pub fn from_algorithm(algorithm: &str) -> HsmResult<Self> {
         match algorithm {
-            "MlKem512" => Ok(KeyMaterialType::MlKem512),
-            "MlKem768" => Ok(KeyMaterialType::MlKem768),
-            "MlKem1024" => Ok(KeyMaterialType::MlKem1024),
-            "MlDsa44" => Ok(KeyMaterialType::MlDsa44),
-            "MlDsa65" => Ok(KeyMaterialType::MlDsa65),
-            "MlDsa87" => Ok(KeyMaterialType::MlDsa87),
-            "SlhDsaShake256f" => Ok(KeyMaterialType::SlhDsa256f),
+            "ML-KEM-512" | "MlKem512" => Ok(KeyMaterialType::MlKem512),
+            "ML-KEM-768" | "MlKem768" => Ok(KeyMaterialType::MlKem768),
+            "ML-KEM-1024" | "MlKem1024" => Ok(KeyMaterialType::MlKem1024),
+            "ML-DSA-44" | "MlDsa44" => Ok(KeyMaterialType::MlDsa44),
+            "ML-DSA-65" | "MlDsa65" => Ok(KeyMaterialType::MlDsa65),
+            "ML-DSA-87" | "MlDsa87" => Ok(KeyMaterialType::MlDsa87),
+            "SLH-DSA-128f" | "SlhDsa128f" => Ok(KeyMaterialType::SlhDsa128f),
+            "SLH-DSA-128s" | "SlhDsa128s" => Ok(KeyMaterialType::SlhDsa128s),
+            "SLH-DSA-192f" | "SlhDsa192f" => Ok(KeyMaterialType::SlhDsa192f),
+            "SLH-DSA-192s" | "SlhDsa192s" => Ok(KeyMaterialType::SlhDsa192s),
+            "SLH-DSA-256f" | "SlhDsa256f" => Ok(KeyMaterialType::SlhDsa256f),
+            "SLH-DSA-256s" | "SlhDsa256s" => Ok(KeyMaterialType::SlhDsa256s),
             _ => Err(HsmError::UnsupportedAlgorithm(algorithm.to_string())),
         }
     }
@@ -276,11 +305,58 @@ impl KeyMaterialType {
         pq_algorithm: &str,
     ) -> HsmResult<Self> {
         match (ec_curve, pq_algorithm) {
-            (KeyMaterialType::EcP256, "MlKem768") => Ok(KeyMaterialType::HybridP256MlKem768),
+            (KeyMaterialType::EcP256, "ML-KEM-512") | (KeyMaterialType::EcP256, "MlKem512") => {
+                Ok(KeyMaterialType::HybridP256MlKem512)
+            }
+            (KeyMaterialType::EcP256, "ML-KEM-768") | (KeyMaterialType::EcP256, "MlKem768") => {
+                Ok(KeyMaterialType::HybridP256MlKem768)
+            }
+            (KeyMaterialType::EcP384, "ML-KEM-1024") | (KeyMaterialType::EcP384, "MlKem1024") => {
+                Ok(KeyMaterialType::HybridP384MlKem1024)
+            }
+            (KeyMaterialType::EcP256, "ML-DSA-44") | (KeyMaterialType::EcP256, "MlDsa44") => {
+                Ok(KeyMaterialType::HybridP256MlDsa44)
+            }
+            (KeyMaterialType::EcP256, "ML-DSA-65") | (KeyMaterialType::EcP256, "MlDsa65") => {
+                Ok(KeyMaterialType::HybridP256MlDsa65)
+            }
+            (KeyMaterialType::EcP384, "ML-DSA-87") | (KeyMaterialType::EcP384, "MlDsa87") => {
+                Ok(KeyMaterialType::HybridP384MlDsa87)
+            }
             _ => Err(HsmError::UnsupportedAlgorithm(format!(
                 "Hybrid: {:?}+{}",
                 ec_curve, pq_algorithm
             ))),
+        }
+    }
+
+    pub fn hybrid_components(&self) -> Option<(KeyMaterialType, &'static str)> {
+        match self {
+            KeyMaterialType::HybridP256MlKem512 => Some((KeyMaterialType::EcP256, "ML-KEM-512")),
+            KeyMaterialType::HybridP256MlKem768 => Some((KeyMaterialType::EcP256, "ML-KEM-768")),
+            KeyMaterialType::HybridP384MlKem1024 => Some((KeyMaterialType::EcP384, "ML-KEM-1024")),
+            KeyMaterialType::HybridP256MlDsa44 => Some((KeyMaterialType::EcP256, "ML-DSA-44")),
+            KeyMaterialType::HybridP256MlDsa65 => Some((KeyMaterialType::EcP256, "ML-DSA-65")),
+            KeyMaterialType::HybridP384MlDsa87 => Some((KeyMaterialType::EcP384, "ML-DSA-87")),
+            _ => None,
+        }
+    }
+
+    pub fn algorithm_label(&self) -> Option<&'static str> {
+        match self {
+            KeyMaterialType::MlKem512 => Some("ML-KEM-512"),
+            KeyMaterialType::MlKem768 => Some("ML-KEM-768"),
+            KeyMaterialType::MlKem1024 => Some("ML-KEM-1024"),
+            KeyMaterialType::MlDsa44 => Some("ML-DSA-44"),
+            KeyMaterialType::MlDsa65 => Some("ML-DSA-65"),
+            KeyMaterialType::MlDsa87 => Some("ML-DSA-87"),
+            KeyMaterialType::SlhDsa128f => Some("SLH-DSA-128f"),
+            KeyMaterialType::SlhDsa128s => Some("SLH-DSA-128s"),
+            KeyMaterialType::SlhDsa192f => Some("SLH-DSA-192f"),
+            KeyMaterialType::SlhDsa192s => Some("SLH-DSA-192s"),
+            KeyMaterialType::SlhDsa256f => Some("SLH-DSA-256f"),
+            KeyMaterialType::SlhDsa256s => Some("SLH-DSA-256s"),
+            _ => None,
         }
     }
 }
@@ -365,4 +441,39 @@ impl AuthContext {
     pub fn has_role(&self, role: &Role) -> bool {
         self.roles.contains(role)
     }
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+pub struct ListApprovalsQuery {
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub action: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub subject: Option<String>,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub policy_tags: Vec<String>,
+    pub page: u32,
+    pub per_page: u32,
+    pub include_resolved: bool,
+}
+
+impl Default for ListApprovalsQuery {
+    fn default() -> Self {
+        Self {
+            action: None,
+            subject: None,
+            policy_tags: Vec::new(),
+            page: 1,
+            per_page: 50,
+            include_resolved: false,
+        }
+    }
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+pub struct ApprovalListPage {
+    pub items: Vec<crate::approvals::PendingApprovalInfo>,
+    pub total: usize,
+    pub page: u32,
+    pub per_page: u32,
+    pub has_more: bool,
 }

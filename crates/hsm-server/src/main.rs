@@ -34,11 +34,11 @@ use uuid::Uuid;
 use crate::tls::TlsSetup;
 use auth::AuthVerifier;
 use hsm_core::{
-    ApprovalStore, AuditEvent, AuditLog, AuthContext, DefaultPolicyEngine, FileApprovalStore,
-    FileAuditLog, HsmError, KeyAlgorithm, KeyGenerationRequest, KeyManager, KeyState, KeyStore,
-    KeyUsage, OperationContext, PendingApprovalInfo, PolicyEngine, RbacAuthorizer, Role,
-    SqliteApprovalStore, SqliteAuditLog, SqliteKeyStore, TamperStatus, retention::RetentionLedger,
-    storage::FileKeyStore,
+    ApprovalStore, AuditEvent, AuditLog, AuthContext, CheckpointScheduler, DefaultPolicyEngine,
+    FileApprovalStore, FileAuditLog, HsmError, KeyAlgorithm, KeyGenerationRequest, KeyManager,
+    KeyRotationScheduler, KeyState, KeyStore, KeyUsage, OperationContext, PendingApprovalInfo,
+    PolicyEngine, RbacAuthorizer, Role, SqliteApprovalStore, SqliteAuditLog, SqliteKeyStore,
+    TamperStatus, retention::RetentionLedger, storage::FileKeyStore,
 };
 use retention::RetentionScheduler;
 
@@ -204,6 +204,14 @@ struct Args {
     /// Interval in seconds between approval retention sweeps.
     #[arg(long, default_value_t = 86400)]
     approval_retention_interval_secs: u64,
+
+    /// Interval in seconds between audit checkpoint verifications.
+    #[arg(long, default_value_t = 3600)]
+    checkpoint_interval_secs: u64,
+
+    /// Interval in seconds between audit signing key rotation checks.
+    #[arg(long, default_value_t = 86400)]
+    key_rotation_interval_secs: u64,
 }
 
 #[derive(Clone, Debug, ValueEnum)]
@@ -758,6 +766,20 @@ async fn main() -> anyhow::Result<()> {
     };
 
     tokio::spawn(retention_scheduler.run());
+
+    // Spawn checkpoint scheduler
+    let checkpoint_interval = Duration::from_secs(args.checkpoint_interval_secs.max(60));
+    if let AuditView::File(file_audit_log) = audit_view.clone() {
+        let checkpoint_scheduler =
+            CheckpointScheduler::new(Arc::clone(&file_audit_log), checkpoint_interval);
+        tokio::spawn(async move { checkpoint_scheduler.run().await });
+
+        // Spawn key rotation scheduler
+        let key_rotation_interval = Duration::from_secs(args.key_rotation_interval_secs.max(60));
+        let key_rotation_scheduler =
+            KeyRotationScheduler::new(file_audit_log, key_rotation_interval);
+        tokio::spawn(async move { key_rotation_scheduler.run().await });
+    }
 
     let audit_interval = Duration::from_secs(args.audit_retention_interval_secs.max(60));
     if let Some(sqlite) = audit_sqlite {

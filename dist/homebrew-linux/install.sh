@@ -8,7 +8,7 @@ set -e
 echo "=== FerroHSM Linux Installer ==="
 
 # Default values
-VERSION="0.2.1"
+VERSION="0.4.0"
 INSTALL_DIR="/usr/local/bin"
 PACKAGE_URL="https://github.com/foozio/ferrohsm/releases/download/v${VERSION}/ferrohsm-${VERSION}-linux-x86_64.tar.gz"
 

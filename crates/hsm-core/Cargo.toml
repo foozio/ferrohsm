@@ -25,6 +25,7 @@ parking_lot = { workspace = true }
 sha2 = { workspace = true }
 hmac = { workspace = true }
 time = { workspace = true }
+tokio = { workspace = true }
 
 p256 = { workspace = true }
 p384 = { workspace = true }

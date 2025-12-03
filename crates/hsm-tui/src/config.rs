@@ -2,8 +2,8 @@
 //!
 //! Provides theme and key binding configuration with persistence.
 
-use crate::ui::style::Theme;
 use crate::ui::input::KeyBindings;
+use crate::ui::style::Theme;
 use anyhow::Result;
 use directories::ProjectDirs;
 use serde::{Deserialize, Serialize};
