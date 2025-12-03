@@ -32,7 +32,7 @@ pub use attributes::{AttributeId, AttributeSet, AttributeTemplate, AttributeValu
 pub use audit::{
     AuditEvent, AuditLog, AuditRecord, AuditSink, FileAuditLog, SqliteAuditLog, compute_event_hash,
 };
-pub use crypto::{CryptoEngine, CryptoOperation, KeyOperationResult};
+pub use crypto::{CryptoEngine, CryptoOperation, HardwareCryptoProvider, KeyOperationResult, MockHardwareProvider};
 pub use error::{HsmError, HsmResult};
 pub use models::{
     AuthContext, KeyAlgorithm, KeyGenerationRequest, KeyHandle, KeyId, KeyListPage, KeyListQuery,
