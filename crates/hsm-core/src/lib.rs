@@ -266,7 +266,7 @@ where
 
         // Apply PQC-specific policy controls if applicable
         if record.metadata.algorithm.is_post_quantum() || record.metadata.algorithm.is_hybrid() {
-            let pqc_controller = PqcPolicyController::default();
+            let pqc_controller = PqcPolicyController;
 
             // Check if the user is authorized to use this PQC algorithm
             if !pqc_controller.is_authorized(ctx, &record.metadata.algorithm) {

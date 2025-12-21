@@ -11,6 +11,93 @@ use hsm_core::models::OperationContext;
 
 use crate::hardware::SoftHsmAdapter;
 
+// PKCS#11 Function List
+lazy_static::lazy_static! {
+    static ref FUNCTION_LIST: CK_FUNCTION_LIST = CK_FUNCTION_LIST {
+        version: CK_VERSION { major: 2, minor: 40 },
+        C_Initialize: Some(C_Initialize),
+        C_Finalize: Some(C_Finalize),
+        C_GetInfo: Some(C_GetInfo),
+        C_GetFunctionList: Some(C_GetFunctionList),
+        C_GetSlotList: Some(C_GetSlotList),
+        C_GetSlotInfo: Some(C_GetSlotInfo),
+        C_GetTokenInfo: Some(C_GetTokenInfo),
+        C_GetMechanismList: Some(C_GetMechanismList),
+        C_GetMechanismInfo: Some(C_GetMechanismInfo),
+        C_InitToken: Some(C_InitToken),
+        C_InitPIN: Some(C_InitPIN),
+        C_SetPIN: Some(C_SetPIN),
+        C_OpenSession: Some(C_OpenSession),
+        C_CloseSession: Some(C_CloseSession),
+        C_CloseAllSessions: Some(C_CloseAllSessions),
+        C_GetSessionInfo: Some(C_GetSessionInfo),
+        C_GetOperationState: None,
+        C_SetOperationState: None,
+        C_Login: Some(C_Login),
+        C_Logout: Some(C_Logout),
+        C_CreateObject: None,
+        C_CopyObject: None,
+        C_DestroyObject: Some(C_DestroyObject),
+        C_GetObjectSize: None,
+        C_GetAttributeValue: Some(C_GetAttributeValue),
+        C_SetAttributeValue: None,
+        C_FindObjectsInit: Some(C_FindObjectsInit),
+        C_FindObjects: Some(C_FindObjects),
+        C_FindObjectsFinal: Some(C_FindObjectsFinal),
+        C_EncryptInit: Some(C_EncryptInit),
+        C_Encrypt: Some(C_Encrypt),
+        C_EncryptUpdate: None,
+        C_EncryptFinal: None,
+        C_DecryptInit: Some(C_DecryptInit),
+        C_Decrypt: Some(C_Decrypt),
+        C_DecryptUpdate: None,
+        C_DecryptFinal: None,
+        C_DigestInit: None,
+        C_Digest: None,
+        C_DigestUpdate: None,
+        C_DigestKey: None,
+        C_DigestFinal: None,
+        C_SignInit: Some(C_SignInit),
+        C_Sign: Some(C_Sign),
+        C_SignUpdate: None,
+        C_SignFinal: None,
+        C_SignRecoverInit: None,
+        C_SignRecover: None,
+        C_VerifyInit: Some(C_VerifyInit),
+        C_Verify: Some(C_Verify),
+        C_VerifyUpdate: None,
+        C_VerifyFinal: None,
+        C_VerifyRecoverInit: None,
+        C_VerifyRecover: None,
+        C_DigestEncryptUpdate: None,
+        C_DecryptDigestUpdate: None,
+        C_SignEncryptUpdate: None,
+        C_DecryptVerifyUpdate: None,
+        C_GenerateKey: Some(C_GenerateKey),
+        C_GenerateKeyPair: None,
+        C_WrapKey: None,
+        C_UnwrapKey: None,
+        C_DeriveKey: None,
+        C_SeedRandom: None,
+        C_GenerateRandom: Some(C_GenerateRandom),
+        C_GetFunctionStatus: None,
+        C_CancelFunction: None,
+        C_WaitForSlotEvent: None,
+    };
+}
+
+// Supported mechanisms
+lazy_static::lazy_static! {
+    static ref SUPPORTED_MECHANISMS: Vec<CK_MECHANISM_TYPE> = vec![
+        CK_MECHANISM_TYPE::CKM_AES_KEY_GEN,
+        CK_MECHANISM_TYPE::CKM_AES_GCM,
+        CK_MECHANISM_TYPE::CKM_RSA_PKCS_KEY_PAIR_GEN,
+        CK_MECHANISM_TYPE::CKM_RSA_PKCS,
+        CK_MECHANISM_TYPE::CKM_EC_KEY_PAIR_GEN,
+        CK_MECHANISM_TYPE::CKM_ECDSA,
+    ];
+}
+
 // Global state managers
 lazy_static::lazy_static! {
     static ref SLOT_MANAGER: Mutex<SlotManager> = {
@@ -47,451 +134,31 @@ pub extern "C" fn C_Initialize(pInitArgs: CK_VOID_PTR) -> CK_RV {
             // Store the initialized adapter
             let mut soft_hsm = SOFT_HSM_ADAPTER.lock().unwrap();
             *soft_hsm = Some(adapter);
-            CK_RV::CKR_OK
-        }
-        Err(_) => CK_RV::CKR_GENERAL_ERROR,
-    }
-}
-
-/// Finalize the PKCS#11 library
-#[no_mangle]
-pub extern "C" fn C_Finalize(pReserved: CK_VOID_PTR) -> CK_RV {
-    // In a real implementation, we would finalize the library here
-    // For now, we'll just return OK
     CK_RV::CKR_OK
 }
 
-/// Get information about the PKCS#11 library
+/// Initialize a verification operation
 #[no_mangle]
-pub extern "C" fn C_GetInfo(pInfo: CK_INFO_PTR) -> CK_RV {
-    if pInfo.is_null() {
-        return CK_RV::CKR_ARGUMENTS_BAD;
-    }
-
-    unsafe {
-        (*pInfo).cryptokiVersion.major = 2;
-        (*pInfo).cryptokiVersion.minor = 40;
-
-        // Manufacturer ID (must be exactly 32 bytes, padded with spaces)
-        let manufacturer_id = b"FerroHSM                        ";
-        (*pInfo).manufacturerID.copy_from_slice(manufacturer_id);
-
-        // Library description (must be exactly 32 bytes, padded with spaces)
-        let library_description = b"FerroHSM PKCS#11 Module         ";
-        (*pInfo).libraryDescription.copy_from_slice(library_description);
-
-        (*pInfo).libraryVersion.major = 0;
-        (*pInfo).libraryVersion.minor = 3;
-
-        (*pInfo).flags = 0; // No special flags
-    }
-
-    CK_RV::CKR_OK
-}
-
-/// Get the list of available slots
-#[no_mangle]
-pub extern "C" fn C_GetSlotList(
-    tokenPresent: CK_BBOOL,
-    pSlotList: CK_SLOT_ID_PTR,
-    pulCount: CK_ULONG_PTR,
-) -> CK_RV {
-    if pulCount.is_null() {
-        return CK_RV::CKR_ARGUMENTS_BAD;
-    }
-
-    let slot_manager = SLOT_MANAGER.lock().unwrap();
-    let slots = slot_manager.get_slots();
-    let count = slots.len() as CK_ULONG;
-
-    // If pSlotList is null, just return the count
-    if pSlotList.is_null() {
-        unsafe {
-            *pulCount = count;
-        }
-        return CK_RV::CKR_OK;
-    }
-
-    // Check if the buffer is large enough
-    unsafe {
-        if *pulCount < count {
-            *pulCount = count;
-            return CK_RV::CKR_BUFFER_TOO_SMALL;
-        }
-
-        *pulCount = count;
-
-        // Fill in the slot list
-        for (i, slot) in slots.iter().enumerate() {
-            *pSlotList.add(i) = slot.id;
-        }
-    }
-
-    CK_RV::CKR_OK
-}
-
-/// Get information about a specific slot
-#[no_mangle]
-pub extern "C" fn C_GetSlotInfo(
-    slotID: CK_SLOT_ID,
-    pInfo: CK_SLOT_INFO_PTR,
-) -> CK_RV {
-    if pInfo.is_null() {
-        return CK_RV::CKR_ARGUMENTS_BAD;
-    }
-
-    let slot_manager = SLOT_MANAGER.lock().unwrap();
-    let slot = match slot_manager.get_slot(slotID) {
-        Some(slot) => slot,
-        None => return CK_RV::CKR_SLOT_ID_INVALID,
-    };
-
-    unsafe {
-        // Slot description (must be exactly 64 bytes, padded with spaces)
-        let slot_description = b"FerroHSM Virtual Slot                    ";
-        (*pInfo).slotDescription.copy_from_slice(slot_description);
-
-        // Manufacturer ID (must be exactly 32 bytes, padded with spaces)
-        let manufacturer_id = b"FerroHSM                        ";
-        (*pInfo).manufacturerID.copy_from_slice(manufacturer_id);
-
-        (*pInfo).flags = CKF_TOKEN_PRESENT | CKF_REMOVABLE_DEVICE | CKF_HW_SLOT;
-
-        (*pInfo).hardwareVersion.major = 0;
-        (*pInfo).hardwareVersion.minor = 1;
-
-        (*pInfo).firmwareVersion.major = 0;
-        (*pInfo).firmwareVersion.minor = 3;
-    }
-
-    CK_RV::CKR_OK
-}
-
-/// Open a session with a token
-#[no_mangle]
-pub extern "C" fn C_OpenSession(
-    slotID: CK_SLOT_ID,
-    flags: CK_FLAGS,
-    pApplication: CK_VOID_PTR,
-    Notify: extern "C" fn(CK_SESSION_HANDLE, CK_NOTIFICATION, CK_VOID_PTR) -> CK_RV,
-    phSession: CK_SESSION_HANDLE_PTR,
-) -> CK_RV {
-    if phSession.is_null() {
-        return CK_RV::CKR_ARGUMENTS_BAD;
-    }
-
-    // Try to open a session with SoftHSM
-    let soft_hsm = SOFT_HSM_ADAPTER.lock().unwrap();
-    if let Some(adapter) = soft_hsm.as_ref() {
-        // For now, we'll use a default PIN
-        // In a real implementation, this would come from the application
-        match adapter.open_session("1234") {
-            Ok(()) => {
-                // Continue with session manager
-                drop(soft_hsm); // Release the lock
-                let mut session_manager = SESSION_MANAGER.lock().unwrap();
-                match session_manager.open_session(slotID, flags) {
-                    Ok(session_handle) => {
-                        unsafe {
-                            *phSession = session_handle;
-                        }
-                        CK_RV::CKR_OK
-                    }
-                    Err(rv) => rv,
-                }
-            }
-            Err(_) => CK_RV::CKR_GENERAL_ERROR,
-        }
-    } else {
-        // Fallback to session manager only
-        drop(soft_hsm); // Release the lock
-        let mut session_manager = SESSION_MANAGER.lock().unwrap();
-        match session_manager.open_session(slotID, flags) {
-            Ok(session_handle) => {
-                unsafe {
-                    *phSession = session_handle;
-                }
-                CK_RV::CKR_OK
-            }
-            Err(rv) => rv,
-        }
-    }
-}
-
-/// Close a session
-#[no_mangle]
-pub extern "C" fn C_CloseSession(hSession: CK_SESSION_HANDLE) -> CK_RV {
-    let mut session_manager = SESSION_MANAGER.lock().unwrap();
-    match session_manager.close_session(hSession) {
-        Ok(()) => CK_RV::CKR_OK,
-        Err(rv) => rv,
-    }
-}
-
-/// Close all sessions
-#[no_mangle]
-pub extern "C" fn C_CloseAllSessions(slotID: CK_SLOT_ID) -> CK_RV {
-    // In a real implementation, we would close all sessions for the given slot
-    // For now, we'll just return OK
-    CK_RV::CKR_OK
-}
-
-/// Get information about a session
-#[no_mangle]
-pub extern "C" fn C_GetSessionInfo(
-    hSession: CK_SESSION_HANDLE,
-    pInfo: CK_SESSION_INFO_PTR,
-) -> CK_RV {
-    if pInfo.is_null() {
-        return CK_RV::CKR_ARGUMENTS_BAD;
-    }
-
-    let session_manager = SESSION_MANAGER.lock().unwrap();
-    let session_info = match session_manager.get_session_info(hSession) {
-        Some(info) => info,
-        None => return CK_RV::CKR_SESSION_HANDLE_INVALID,
-    };
-
-    unsafe {
-        *pInfo = session_info;
-    }
-
-    CK_RV::CKR_OK
-}
-
-/// Get information about a token
-#[no_mangle]
-pub extern "C" fn C_GetTokenInfo(
-    slotID: CK_SLOT_ID,
-    pInfo: CK_TOKEN_INFO_PTR,
-) -> CK_RV {
-    if pInfo.is_null() {
-        return CK_RV::CKR_ARGUMENTS_BAD;
-    }
-
-    let slot_manager = SLOT_MANAGER.lock().unwrap();
-    if slot_manager.get_slot(slotID).is_none() {
-        return CK_RV::CKR_SLOT_ID_INVALID;
-    }
-
-    unsafe {
-        // Label (must be exactly 32 bytes, padded with spaces)
-        let label = b"FerroHSM Token                   ";
-        (*pInfo).label.copy_from_slice(label);
-
-        // Manufacturer ID (must be exactly 32 bytes, padded with spaces)
-        let manufacturer_id = b"FerroHSM                        ";
-        (*pInfo).manufacturerID.copy_from_slice(manufacturer_id);
-
-        // Model (must be exactly 16 bytes, padded with spaces)
-        let model = b"HSM            ";
-        (*pInfo).model.copy_from_slice(model);
-
-        // Serial number (must be exactly 16 bytes, padded with spaces)
-        let serial_number = b"00000001        ";
-        (*pInfo).serialNumber.copy_from_slice(serial_number);
-
-        (*pInfo).flags = CKF_RNG | CKF_LOGIN_REQUIRED | CKF_USER_PIN_INITIALIZED | CKF_TOKEN_INITIALIZED;
-
-        (*pInfo).ulMaxSessionCount = CK_EFFECTIVELY_INFINITE;
-        (*pInfo).ulSessionCount = 0;
-        (*pInfo).ulMaxRwSessionCount = CK_EFFECTIVELY_INFINITE;
-        (*pInfo).ulRwSessionCount = 0;
-        (*pInfo).ulMaxPinLen = 128;
-        (*pInfo).ulMinPinLen = 4;
-        (*pInfo).ulTotalPublicMemory = CK_UNAVAILABLE_INFORMATION;
-        (*pInfo).ulFreePublicMemory = CK_UNAVAILABLE_INFORMATION;
-        (*pInfo).ulTotalPrivateMemory = CK_UNAVAILABLE_INFORMATION;
-        (*pInfo).ulFreePrivateMemory = CK_UNAVAILABLE_INFORMATION;
-
-        (*pInfo).hardwareVersion.major = 0;
-        (*pInfo).hardwareVersion.minor = 1;
-
-        (*pInfo).firmwareVersion.major = 0;
-        (*pInfo).firmwareVersion.minor = 3;
-    }
-
-    CK_RV::CKR_OK
-}
-
-/// Get the function list
-#[no_mangle]
-pub extern "C" fn C_GetFunctionList(
-    ppFunctionList: *mut *const CK_FUNCTION_LIST,
-) -> CK_RV {
-    if ppFunctionList.is_null() {
-        return CK_RV::CKR_ARGUMENTS_BAD;
-    }
-
-    // In a real implementation, we would return a pointer to our function list
-    // For now, we'll just return OK
-    CK_RV::CKR_OK
-}
-
-/// Generate a key
-#[no_mangle]
-pub extern "C" fn C_GenerateKey(
+pub extern "C" fn C_VerifyInit(
     hSession: CK_SESSION_HANDLE,
     pMechanism: CK_MECHANISM_PTR,
-    pTemplate: CK_ATTRIBUTE_PTR,
-    ulCount: CK_ULONG,
-    phKey: CK_OBJECT_HANDLE_PTR,
+    hKey: CK_OBJECT_HANDLE,
 ) -> CK_RV {
-    if pMechanism.is_null() || pTemplate.is_null() || phKey.is_null() {
+    if pMechanism.is_null() {
         return CK_RV::CKR_ARGUMENTS_BAD;
     }
 
-    // Get the session
-    let session_manager = SESSION_MANAGER.lock().unwrap();
-    let session = match session_manager.get_session(hSession) {
+    let mut session_manager = SESSION_MANAGER.lock().unwrap();
+    let session = match session_manager.get_mut_session(hSession) {
         Some(session) => session,
         None => return CK_RV::CKR_SESSION_HANDLE_INVALID,
     };
 
-    // Parse the mechanism
     let mechanism = unsafe { *pMechanism };
-    let algorithm = match mechanism.mechanism {
-        CK_MECHANISM_TYPE::CKM_AES_KEY_GEN => hsm_core::models::KeyAlgorithm::Aes256Gcm,
-        _ => return CK_RV::CKR_MECHANISM_INVALID,
-    };
+    session.active_mechanism = Some(mechanism.mechanism);
+    session.active_key = Some(hKey);
 
-    // Parse the template to get key attributes
-    let template = unsafe { std::slice::from_raw_parts(pTemplate, ulCount as usize) };
-
-    // Create key generation request
-    let request = hsm_core::models::KeyGenerationRequest {
-        algorithm,
-        usage: vec![hsm_core::models::KeyPurpose::Encrypt, hsm_core::models::KeyPurpose::Decrypt], // Default usage
-        policy_tags: vec![],
-        description: Some("PKCS#11 generated key".to_string()),
-    };
-
-    // Generate the key
-    match CRYPTO_ENGINE.generate_material(&request) {
-        Ok(generated) => {
-            // Add the key to the object manager
-            let mut object_manager = OBJECT_MANAGER.lock().unwrap();
-            let record = CRYPTO_ENGINE
-                .seal_key(&generated.metadata, generated.material)
-                .unwrap();
-            let handle = object_manager.add_key_object(record);
-
-            unsafe {
-                *phKey = handle;
-            }
-            CK_RV::CKR_OK
-        }
-        Err(e) => hsm_error_to_ckr(e),
-    }
-}
-
-/// Initialize object search
-#[no_mangle]
-pub extern "C" fn C_FindObjectsInit(
-    hSession: CK_SESSION_HANDLE,
-    pTemplate: CK_ATTRIBUTE_PTR,
-    ulCount: CK_ULONG,
-) -> CK_RV {
-    if pTemplate.is_null() && ulCount > 0 {
-        return CK_RV::CKR_ARGUMENTS_BAD;
-    }
-    
-    // Get the session
-    let session_manager = SESSION_MANAGER.lock().unwrap();
-    let session = match session_manager.get_session(hSession) {
-        Some(session) => session,
-        None => return CK_RV::CKR_SESSION_HANDLE_INVALID,
-    };
-    
-    // Get the template
-    let template = if ulCount > 0 {
-        unsafe { std::slice::from_raw_parts(pTemplate, ulCount as usize) }
-    } else {
-        &[]
-    };
-    
-    // Initialize search
-    let mut object_manager = OBJECT_MANAGER.lock().unwrap();
-    object_manager.find_objects_init(hSession, template)
-}
-
-/// Find objects
-#[no_mangle]
-pub extern "C" fn C_FindObjects(
-    hSession: CK_SESSION_HANDLE,
-    phObject: CK_OBJECT_HANDLE_PTR,
-    ulMaxObjectCount: CK_ULONG,
-    pulObjectCount: CK_ULONG_PTR,
-) -> CK_RV {
-    if phObject.is_null() || pulObjectCount.is_null() {
-        return CK_RV::CKR_ARGUMENTS_BAD;
-    }
-    
-    // Get the session
-    let session_manager = SESSION_MANAGER.lock().unwrap();
-    let session = match session_manager.get_session(hSession) {
-        Some(session) => session,
-        None => return CK_RV::CKR_SESSION_HANDLE_INVALID,
-    };
-    
-    // Continue search
-    let mut object_manager = OBJECT_MANAGER.lock().unwrap();
-    let (objects, rv) = object_manager.find_objects_continue(hSession, ulMaxObjectCount as usize);
-    
-    if rv != CK_RV::CKR_OK {
-        return rv;
-    }
-    
-    // Copy objects to output buffer
-    unsafe {
-        for (i, &object_handle) in objects.iter().enumerate() {
-            *phObject.add(i) = object_handle;
-        }
-        *pulObjectCount = objects.len() as CK_ULONG;
-    }
-    
     CK_RV::CKR_OK
-}
-
-/// Finalize object search
-#[no_mangle]
-pub extern "C" fn C_FindObjectsFinal(hSession: CK_SESSION_HANDLE) -> CK_RV {
-    // Get the session
-    let session_manager = SESSION_MANAGER.lock().unwrap();
-    let session = match session_manager.get_session(hSession) {
-        Some(session) => session,
-        None => return CK_RV::CKR_SESSION_HANDLE_INVALID,
-    };
-    
-    // Finalize search
-    let mut object_manager = OBJECT_MANAGER.lock().unwrap();
-    object_manager.find_objects_final(hSession)
-}
-
-/// Sign data
-#[no_mangle]
-pub extern "C" fn C_Sign(
-    hSession: CK_SESSION_HANDLE,
-    pData: CK_BYTE_PTR,
-    ulDataLen: CK_ULONG,
-    pSignature: CK_BYTE_PTR,
-    pulSignatureLen: CK_ULONG_PTR,
-) -> CK_RV {
-    if pData.is_null() || pulSignatureLen.is_null() {
-        return CK_RV::CKR_ARGUMENTS_BAD;
-    }
-
-    // Get the session
-    let session_manager = SESSION_MANAGER.lock().unwrap();
-    let session = match session_manager.get_session(hSession) {
-        Some(session) => session,
-        None => return CK_RV::CKR_SESSION_HANDLE_INVALID,
-    };
-
-    // For now, we'll assume we're signing with a key that was previously set
-    // In a full implementation, we would need to track the signing key per session
-    // For this placeholder, we'll just return an error
-    CK_RV::CKR_OPERATION_NOT_INITIALIZED
 }
 
 /// Verify signature
@@ -506,23 +173,48 @@ pub extern "C" fn C_Verify(
     if pData.is_null() || pSignature.is_null() {
         return CK_RV::CKR_ARGUMENTS_BAD;
     }
-    
-    // Get the session
+
     let session_manager = SESSION_MANAGER.lock().unwrap();
     let session = match session_manager.get_session(hSession) {
         Some(session) => session,
         None => return CK_RV::CKR_SESSION_HANDLE_INVALID,
     };
-    
-    // Try to use SoftHSM adapter
-    let soft_hsm = SOFT_HSM_ADAPTER.lock().unwrap();
-    if let Some(adapter) = soft_hsm.as_ref() {
-        // For now, we'll just return OK
-        // In a full implementation, we would use the SoftHSM adapter to verify the signature
-        CK_RV::CKR_OK
-    } else {
-        // Fallback implementation
-        CK_RV::CKR_OK
+
+    let key_handle = match session.active_key {
+        Some(handle) => handle,
+        None => return CK_RV::CKR_OPERATION_NOT_INITIALIZED,
+    };
+
+    let object_manager = OBJECT_MANAGER.lock().unwrap();
+    let object = match object_manager.get_object(key_handle) {
+        Some(object) => object,
+        None => return CK_RV::CKR_KEY_HANDLE_INVALID,
+    };
+
+    let key_material = match CRYPTO_ENGINE.open_key(&object.record) {
+        Ok(material) => material,
+        Err(e) => return hsm_error_to_ckr(e),
+    };
+
+    let data = unsafe { std::slice::from_raw_parts(pData, ulDataLen as usize) };
+    let signature = unsafe { std::slice::from_raw_parts(pSignature, ulSignatureLen as usize) };
+
+    let operation = CryptoOperation::Verify {
+        message: data.to_vec(),
+        signature: signature.to_vec(),
+    };
+    let op_ctx = OperationContext::new();
+
+    match CRYPTO_ENGINE.perform(operation, &key_material, &op_ctx) {
+        Ok(KeyOperationResult::Verified { valid }) => {
+            if valid {
+                CK_RV::CKR_OK
+            } else {
+                CK_RV::CKR_SIGNATURE_INVALID
+            }
+        }
+        Ok(_) => CK_RV::CKR_GENERAL_ERROR,
+        Err(e) => hsm_error_to_ckr(e),
     }
 }
 
@@ -607,7 +299,105 @@ pub extern "C" fn C_GetAttributeValue(
             attr.ulValueLen = CK_UNAVAILABLE_INFORMATION;
         }
     }
-    
+
+    CK_RV::CKR_OK
+}
+
+/// Get the list of supported mechanisms
+#[no_mangle]
+pub extern "C" fn C_GetMechanismList(
+    slotID: CK_SLOT_ID,
+    pMechanismList: CK_MECHANISM_TYPE_PTR,
+    pulCount: CK_ULONG_PTR,
+) -> CK_RV {
+    if pulCount.is_null() {
+        return CK_RV::CKR_ARGUMENTS_BAD;
+    }
+
+    let slot_manager = SLOT_MANAGER.lock().unwrap();
+    let slots = slot_manager.get_slots();
+    if !slots.iter().any(|s| s.id == slotID) {
+        return CK_RV::CKR_SLOT_ID_INVALID;
+    }
+
+    let count = SUPPORTED_MECHANISMS.len() as CK_ULONG;
+
+    unsafe {
+        if pMechanismList.is_null() {
+            *pulCount = count;
+            return CK_RV::CKR_OK;
+        }
+
+        if *pulCount < count {
+            *pulCount = count;
+            return CK_RV::CKR_BUFFER_TOO_SMALL;
+        }
+
+        *pulCount = count;
+        for (i, &mech) in SUPPORTED_MECHANISMS.iter().enumerate() {
+            *pMechanismList.add(i) = mech;
+        }
+    }
+
+    CK_RV::CKR_OK
+}
+
+/// Get information about a mechanism
+#[no_mangle]
+pub extern "C" fn C_GetMechanismInfo(
+    slotID: CK_SLOT_ID,
+    mechanism: CK_MECHANISM_TYPE,
+    pInfo: CK_MECHANISM_INFO_PTR,
+) -> CK_RV {
+    if pInfo.is_null() {
+        return CK_RV::CKR_ARGUMENTS_BAD;
+    }
+
+    let slot_manager = SLOT_MANAGER.lock().unwrap();
+    if slot_manager.get_slot(slotID).is_none() {
+        return CK_RV::CKR_SLOT_ID_INVALID;
+    }
+
+    if !SUPPORTED_MECHANISMS.contains(&mechanism) {
+        return CK_RV::CKR_MECHANISM_INVALID;
+    }
+
+    unsafe {
+        match mechanism {
+            CK_MECHANISM_TYPE::CKM_AES_KEY_GEN => {
+                (*pInfo).ulMinKeySize = 16;
+                (*pInfo).ulMaxKeySize = 32;
+                (*pInfo).flags = CKF_GENERATE;
+            }
+            CK_MECHANISM_TYPE::CKM_AES_GCM => {
+                (*pInfo).ulMinKeySize = 16;
+                (*pInfo).ulMaxKeySize = 32;
+                (*pInfo).flags = CKF_ENCRYPT | CKF_DECRYPT;
+            }
+            CK_MECHANISM_TYPE::CKM_RSA_PKCS_KEY_PAIR_GEN => {
+                (*pInfo).ulMinKeySize = 1024;
+                (*pInfo).ulMaxKeySize = 4096;
+                (*pInfo).flags = CKF_GENERATE_KEY_PAIR;
+            }
+            CK_MECHANISM_TYPE::CKM_RSA_PKCS => {
+                (*pInfo).ulMinKeySize = 1024;
+                (*pInfo).ulMaxKeySize = 4096;
+                (*pInfo).flags = CKF_SIGN | CKF_VERIFY | CKF_ENCRYPT | CKF_DECRYPT;
+            }
+            CK_MECHANISM_TYPE::CKM_EC_KEY_PAIR_GEN => {
+                (*pInfo).ulMinKeySize = 256;
+                (*pInfo).ulMaxKeySize = 384;
+                (*pInfo).flags = CKF_GENERATE_KEY_PAIR;
+            }
+            CK_MECHANISM_TYPE::CKM_ECDSA => {
+                (*pInfo).ulMinKeySize = 256;
+                (*pInfo).ulMaxKeySize = 384;
+                (*pInfo).flags = CKF_SIGN | CKF_VERIFY;
+            }
+            _ => return CK_RV::CKR_MECHANISM_INVALID,
+        }
+    }
+
     CK_RV::CKR_OK
 }
 

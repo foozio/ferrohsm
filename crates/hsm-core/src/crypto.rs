@@ -5,7 +5,7 @@ use aes_gcm::{
     aead::{Aead, Payload},
 };
 use hmac::{Hmac, Mac};
-use std::convert::TryFrom;
+
 
 use aws_lc_rs::{
     encoding::AsDer,
@@ -13,10 +13,7 @@ use aws_lc_rs::{
     signature::{self, KeyPair},
 };
 use base64::{Engine as _, engine::general_purpose};
-use ml_dsa::{
-    MlDsa44, MlDsa65, MlDsa87,
-    signature::{SignatureEncoding, Signer, Verifier},
-};
+use ml_dsa::signature::{Signer, Verifier};
 use p256::elliptic_curve::sec1::ToEncodedPoint;
 use p256::{
     PublicKey as P256PublicKey, SecretKey as P256SecretKey,
@@ -26,7 +23,7 @@ use p384::{
     PublicKey as P384PublicKey, SecretKey as P384SecretKey,
     ecdsa::{SigningKey as P384SigningKey, VerifyingKey as P384VerifyingKey},
 };
-use pkcs8::spki::SubjectPublicKeyInfo;
+
 use pkcs8::{
     DecodePrivateKey, DecodePublicKey, EncodePrivateKey, EncodePublicKey, LineEnding,
     PrivateKeyInfo,
@@ -691,6 +688,7 @@ impl CryptoEngine {
                         "Unsupported EC curve for signing".to_string(),
                     )),
                 },
+                #[cfg(feature = "pqc")]
                 KeyMaterial::PostQuantum {
                     private_key,
                     algorithm,
@@ -733,6 +731,7 @@ impl CryptoEngine {
                     Ok(KeyOperationResult::Signature { signature })
                 }
 
+                #[cfg(feature = "pqc")]
                 KeyMaterial::Hybrid {
                     ec_curve,
                     ec_private_pem,
@@ -803,6 +802,7 @@ impl CryptoEngine {
                     };
                     Ok(KeyOperationResult::Verified { valid })
                 }
+                #[cfg(feature = "pqc")]
                 KeyMaterial::PostQuantum {
                     public_key,
                     algorithm,
@@ -844,6 +844,7 @@ impl CryptoEngine {
                     };
                     Ok(KeyOperationResult::Verified { valid })
                 }
+                #[cfg(feature = "pqc")]
                 KeyMaterial::Hybrid {
                     ec_curve,
                     ec_public_pem,
@@ -1026,7 +1027,7 @@ impl CryptoEngine {
                     Err(pqc_disabled_error())
                 }
             }
-            CryptoOperation::HybridEncrypt { plaintext: _ } => {
+            CryptoOperation::HybridEncrypt { plaintext } => {
                 #[cfg(feature = "pqc")]
                 {
                     match material {
@@ -1236,6 +1237,7 @@ impl CryptoEngine {
     }
 }
 
+#[allow(dead_code)]
 fn ec_public_sec1_bytes(pem: &str, curve: &KeyMaterialType) -> HsmResult<Vec<u8>> {
     match curve {
         KeyMaterialType::EcP256 => {
@@ -1252,6 +1254,7 @@ fn ec_public_sec1_bytes(pem: &str, curve: &KeyMaterialType) -> HsmResult<Vec<u8>
     }
 }
 
+#[allow(dead_code)]
 fn ec_private_scalar(pem: &str, curve: &KeyMaterialType) -> HsmResult<Vec<u8>> {
     match curve {
         KeyMaterialType::EcP256 => {

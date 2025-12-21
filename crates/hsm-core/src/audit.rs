@@ -359,10 +359,10 @@ impl AuditLog for FileAuditLog {
         FileExt::unlock(&file).map_err(HsmError::audit)?;
 
         // Anchor hash to external store periodically
-        if let Some(anchor) = &self.anchor {
-            if chain.record_count % self.anchor_batch_size == 0 {
-                anchor.anchor_hash(&hash, timestamp)?;
-            }
+        if let Some(anchor) = &self.anchor
+            && chain.record_count.is_multiple_of(self.anchor_batch_size)
+        {
+            anchor.anchor_hash(&hash, timestamp)?;
         }
         chain.record_count += 1;
 

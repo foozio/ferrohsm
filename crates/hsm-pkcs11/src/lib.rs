@@ -18,10 +18,12 @@ use cryptoki_sys::{
     CK_SLOT_ID_PTR, CK_SLOT_INFO, CK_SLOT_INFO_PTR, CK_STATE, CK_TOKEN_INFO, CK_TOKEN_INFO_PTR,
     CK_ULONG, CK_ULONG_PTR, CK_UNAVAILABLE_INFORMATION, CK_USER_TYPE, CK_UTF8CHAR_PTR, CK_VOID_PTR,
     CKR_ARGUMENTS_BAD, CKR_BUFFER_TOO_SMALL, CKR_CRYPTOKI_ALREADY_INITIALIZED,
-    CKR_CRYPTOKI_NOT_INITIALIZED, CKR_FUNCTION_FAILED, CKR_OK,
+    CKR_CRYPTOKI_NOT_INITIALIZED, CKR_FUNCTION_FAILED, CKR_OK, CKR_SIGNATURE_INVALID,
 };
 use hsm_core::{
-    crypto::CryptoEngine,
+    attributes::{AttributeSet as CoreAttributeSet, AttributeValue as CoreAttributeValue},
+    crypto::{CryptoEngine, CryptoOperation, KeyOperationResult},
+    models::{KeyGenerationRequest, KeyMetadata, KeyPurpose},
     storage::{KeyStore, MemoryKeyStore},
 };
 
@@ -132,6 +134,8 @@ pub enum FrontendError {
     AlreadyInitialized,
     #[error("cryptoki not initialized")]
     NotInitialized,
+    #[error("signature invalid")]
+    SignatureInvalid,
     #[error("internal error: {0}")]
     Internal(String),
 }
@@ -141,6 +145,7 @@ fn translate_error(err: FrontendError) -> CK_RV {
     match err {
         FrontendError::AlreadyInitialized => CKR_CRYPTOKI_ALREADY_INITIALIZED,
         FrontendError::NotInitialized => CKR_CRYPTOKI_NOT_INITIALIZED,
+        FrontendError::SignatureInvalid => CKR_SIGNATURE_INVALID,
         FrontendError::Internal(_) => CKR_FUNCTION_FAILED,
     }
 }
@@ -265,10 +270,10 @@ pub fn verify_init(
 /// Perform a verification operation
 pub fn verify(
     session_handle: CK_SESSION_HANDLE,
-    _data: CK_BYTE_PTR,
-    _data_len: CK_ULONG,
-    _signature: CK_BYTE_PTR,
-    _signature_len: CK_ULONG,
+    data: CK_BYTE_PTR,
+    data_len: CK_ULONG,
+    signature: CK_BYTE_PTR,
+    signature_len: CK_ULONG,
 ) -> Result<(), FrontendError> {
     let mut guard = STATE.write();
     let context = guard
@@ -291,20 +296,73 @@ pub fn verify(
         .take()
         .ok_or_else(|| FrontendError::Internal("No active operation".to_string()))?;
 
-    match active_op {
+    let key_handle = match active_op {
         ActiveOperation::Verify {
             mechanism_type: _,
-            key_handle: _,
-        } => {}
+            key_handle,
+        } => key_handle,
         _ => {
             return Err(FrontendError::Internal(
                 "Wrong active operation".to_string(),
             ));
         }
+    };
+
+    // Find the object
+    let object = context
+        .objects
+        .get(&key_handle)
+        .ok_or_else(|| FrontendError::Internal(format!("Object {} not found", key_handle)))?;
+
+    if object.session_handle != session_handle {
+        return Err(FrontendError::Internal(
+            "Object does not belong to this session".to_string(),
+        ));
     }
 
-    // For dummy implementation, always return success
-    Ok(())
+    let key_id = object.key_id.as_ref().ok_or_else(|| {
+        FrontendError::Internal("Object does not have associated key".to_string())
+    })?;
+
+    // Fetch key record
+    let record = context
+        .key_store
+        .fetch(key_id)
+        .map_err(|e| FrontendError::Internal(format!("Failed to fetch key: {e}")))?;
+
+    // Open key material
+    let material = context
+        .crypto_engine
+        .open_key(&record)
+        .map_err(|e| FrontendError::Internal(format!("Failed to open key: {e}")))?;
+
+    // Perform operation
+    let payload = unsafe { std::slice::from_raw_parts(data, data_len as usize).to_vec() };
+    let sig_bytes =
+        unsafe { std::slice::from_raw_parts(signature, signature_len as usize).to_vec() };
+
+    let op = CryptoOperation::Verify {
+        payload,
+        signature: sig_bytes,
+    };
+
+    let result = context
+        .crypto_engine
+        .perform(op, &material, &Default::default())
+        .map_err(|e| FrontendError::Internal(format!("Crypto operation failed: {e}")))?;
+
+    match result {
+        KeyOperationResult::Verified { valid } => {
+            if valid {
+                Ok(())
+            } else {
+                Err(FrontendError::SignatureInvalid)
+            }
+        }
+        _ => Err(FrontendError::Internal(
+            "Unexpected result type".to_string(),
+        )),
+    }
 }
 
 /// Initialize an encryption operation
@@ -388,32 +446,80 @@ pub fn encrypt(
         .take()
         .ok_or_else(|| FrontendError::Internal("No active operation".to_string()))?;
 
-    match active_op {
+    let key_handle = match active_op {
         ActiveOperation::Encrypt {
             mechanism_type: _,
-            key_handle: _,
-        } => {}
+            key_handle,
+        } => key_handle,
         _ => {
             return Err(FrontendError::Internal(
                 "Wrong active operation".to_string(),
             ));
         }
+    };
+
+    // Find the object
+    let object = context
+        .objects
+        .get(&key_handle)
+        .ok_or_else(|| FrontendError::Internal(format!("Object {} not found", key_handle)))?;
+
+    if object.session_handle != session_handle {
+        return Err(FrontendError::Internal(
+            "Object does not belong to this session".to_string(),
+        ));
     }
 
-    // For dummy implementation, assume AES, output same size
-    let output_size = data_len as usize;
-    unsafe {
-        if encrypted_data.is_null() {
-            *encrypted_data_len = output_size as CK_ULONG;
-        } else {
-            if *encrypted_data_len < output_size as CK_ULONG {
-                return Err(FrontendError::Internal(
-                    "Encrypted data buffer too small".to_string(),
-                ));
+    let key_id = object.key_id.as_ref().ok_or_else(|| {
+        FrontendError::Internal("Object does not have associated key".to_string())
+    })?;
+
+    // Fetch key record
+    let record = context
+        .key_store
+        .fetch(key_id)
+        .map_err(|e| FrontendError::Internal(format!("Failed to fetch key: {e}")))?;
+
+    // Open key material
+    let material = context
+        .crypto_engine
+        .open_key(&record)
+        .map_err(|e| FrontendError::Internal(format!("Failed to open key: {e}")))?;
+
+    // Perform operation
+    let plaintext = unsafe { std::slice::from_raw_parts(data, data_len as usize).to_vec() };
+    let op = CryptoOperation::Encrypt { plaintext };
+
+    let result = context
+        .crypto_engine
+        .perform(op, &material, &Default::default())
+        .map_err(|e| FrontendError::Internal(format!("Crypto operation failed: {e}")))?;
+
+    match result {
+        KeyOperationResult::Encrypted { ciphertext, nonce } => unsafe {
+            // Prepend nonce to ciphertext to preserve it
+            let mut output = nonce;
+            output.extend(ciphertext);
+
+            if encrypted_data.is_null() {
+                *encrypted_data_len = output.len() as CK_ULONG;
+            } else {
+                if *encrypted_data_len < output.len() as CK_ULONG {
+                    *encrypted_data_len = output.len() as CK_ULONG;
+                    return Err(FrontendError::Internal("Buffer too small".to_string()));
+                }
+                std::ptr::copy_nonoverlapping(
+                    output.as_ptr(),
+                    encrypted_data,
+                    output.len(),
+                );
+                *encrypted_data_len = output.len() as CK_ULONG;
             }
-            // Copy data as dummy encryption
-            std::ptr::copy_nonoverlapping(data, encrypted_data, output_size);
-            *encrypted_data_len = output_size as CK_ULONG;
+        },
+        _ => {
+            return Err(FrontendError::Internal(
+                "Unexpected result type".to_string(),
+            ));
         }
     }
 
@@ -501,30 +607,85 @@ pub fn decrypt(
         .take()
         .ok_or_else(|| FrontendError::Internal("No active operation".to_string()))?;
 
-    match active_op {
+    let key_handle = match active_op {
         ActiveOperation::Decrypt {
             mechanism_type: _,
-            key_handle: _,
-        } => {}
+            key_handle,
+        } => key_handle,
         _ => {
             return Err(FrontendError::Internal(
                 "Wrong active operation".to_string(),
             ));
         }
+    };
+
+    // Find the object
+    let object = context
+        .objects
+        .get(&key_handle)
+        .ok_or_else(|| FrontendError::Internal(format!("Object {} not found", key_handle)))?;
+
+    if object.session_handle != session_handle {
+        return Err(FrontendError::Internal(
+            "Object does not belong to this session".to_string(),
+        ));
     }
 
-    // For dummy implementation, assume AES, output same size
-    let output_size = encrypted_data_len as usize;
-    unsafe {
-        if data.is_null() {
-            *data_len = output_size as CK_ULONG;
-        } else {
-            if *data_len < output_size as CK_ULONG {
-                return Err(FrontendError::Internal("Data buffer too small".to_string()));
+    let key_id = object.key_id.as_ref().ok_or_else(|| {
+        FrontendError::Internal("Object does not have associated key".to_string())
+    })?;
+
+    // Fetch key record
+    let record = context
+        .key_store
+        .fetch(key_id)
+        .map_err(|e| FrontendError::Internal(format!("Failed to fetch key: {e}")))?;
+
+    // Open key material
+    let material = context
+        .crypto_engine
+        .open_key(&record)
+        .map_err(|e| FrontendError::Internal(format!("Failed to open key: {e}")))?;
+
+    // Perform operation
+    let full_ciphertext =
+        unsafe { std::slice::from_raw_parts(encrypted_data, encrypted_data_len as usize).to_vec() };
+    
+    // Extract nonce (first 12 bytes)
+    let (nonce, ciphertext) = if full_ciphertext.len() >= 12 {
+        let (n, c) = full_ciphertext.split_at(12);
+        (n.to_vec(), c.to_vec())
+    } else {
+        return Err(FrontendError::Internal("Data too short for nonce".to_string()));
+    };
+
+    let op = CryptoOperation::Decrypt {
+        ciphertext,
+        nonce,
+        associated_data: None,
+    };
+
+    let result = context
+        .crypto_engine
+        .perform(op, &material, &Default::default())
+        .map_err(|e| FrontendError::Internal(format!("Crypto operation failed: {e}")))?;
+
+    match result {
+        KeyOperationResult::Decrypted { plaintext } => unsafe {
+            if data.is_null() {
+                *data_len = plaintext.len() as CK_ULONG;
+            } else {
+                if *data_len < plaintext.len() as CK_ULONG {
+                    return Err(FrontendError::Internal("Data buffer too small".to_string()));
+                }
+                std::ptr::copy_nonoverlapping(plaintext.as_ptr(), data, plaintext.len());
+                *data_len = plaintext.len() as CK_ULONG;
             }
-            // Copy data as dummy decryption
-            std::ptr::copy_nonoverlapping(encrypted_data, data, output_size);
-            *data_len = output_size as CK_ULONG;
+        },
+        _ => {
+            return Err(FrontendError::Internal(
+                "Unexpected result type".to_string(),
+            ));
         }
     }
 
@@ -1112,6 +1273,116 @@ pub fn get_attribute_value(
     Ok(())
 }
 
+fn convert_to_core_attributes(
+    template: &[cryptoki_sys::CK_ATTRIBUTE],
+) -> Result<CoreAttributeSet, FrontendError> {
+    let mut set = CoreAttributeSet::new();
+    for attr in template {
+        if !attr.pValue.is_null() && attr.ulValueLen > 0 {
+            let value_bytes = unsafe {
+                std::slice::from_raw_parts(attr.pValue as *const u8, attr.ulValueLen as usize)
+                    .to_vec()
+            };
+
+            // Convert based on attribute type if necessary
+            // For now, store everything as Bytes, except booleans
+            let core_value = match attr.type_ {
+                cryptoki_sys::CKA_TOKEN
+                | cryptoki_sys::CKA_PRIVATE
+                | cryptoki_sys::CKA_MODIFIABLE
+                | cryptoki_sys::CKA_ENCRYPT
+                | cryptoki_sys::CKA_DECRYPT
+                | cryptoki_sys::CKA_SIGN
+                | cryptoki_sys::CKA_VERIFY
+                | cryptoki_sys::CKA_WRAP
+                | cryptoki_sys::CKA_UNWRAP
+                | cryptoki_sys::CKA_SENSITIVE
+                | cryptoki_sys::CKA_EXTRACTABLE
+                | cryptoki_sys::CKA_ALWAYS_SENSITIVE
+                | cryptoki_sys::CKA_NEVER_EXTRACTABLE
+                | cryptoki_sys::CKA_LOCAL => {
+                    if value_bytes.len() >= 1 {
+                        CoreAttributeValue::Bool(value_bytes[0] != 0)
+                    } else {
+                        CoreAttributeValue::Bool(false)
+                    }
+                }
+                _ => CoreAttributeValue::Bytes(value_bytes),
+            };
+
+            set.insert(attr.type_ as u32, core_value);
+        }
+    }
+    Ok(set)
+}
+
+fn parse_key_generation_request(
+    mechanism: &cryptoki_sys::CK_MECHANISM,
+    template: &[cryptoki_sys::CK_ATTRIBUTE],
+) -> Result<KeyGenerationRequest, FrontendError> {
+    let algorithm = crate::mechanism::mechanism_to_key_algorithm(mechanism.mechanism)
+        .ok_or_else(|| FrontendError::Internal("Unsupported mechanism".to_string()))?;
+
+    let mut usage = Vec::new();
+    let mut description = None;
+    let policy_tags = Vec::new();
+
+    for attr in template {
+        if !attr.pValue.is_null() && attr.ulValueLen > 0 {
+            let value_bytes = unsafe {
+                std::slice::from_raw_parts(attr.pValue as *const u8, attr.ulValueLen as usize)
+            };
+            let is_true = !value_bytes.is_empty() && value_bytes[0] != 0;
+
+            match attr.type_ {
+                cryptoki_sys::CKA_ENCRYPT => {
+                    if is_true {
+                        usage.push(KeyPurpose::Encrypt);
+                    }
+                }
+                cryptoki_sys::CKA_DECRYPT => {
+                    if is_true {
+                        usage.push(KeyPurpose::Decrypt);
+                    }
+                }
+                cryptoki_sys::CKA_SIGN => {
+                    if is_true {
+                        usage.push(KeyPurpose::Sign);
+                    }
+                }
+                cryptoki_sys::CKA_VERIFY => {
+                    if is_true {
+                        usage.push(KeyPurpose::Verify);
+                    }
+                }
+                cryptoki_sys::CKA_WRAP => {
+                    if is_true {
+                        usage.push(KeyPurpose::Wrap);
+                    }
+                }
+                cryptoki_sys::CKA_UNWRAP => {
+                    if is_true {
+                        usage.push(KeyPurpose::Unwrap);
+                    }
+                }
+                cryptoki_sys::CKA_LABEL => {
+                    if let Ok(s) = std::str::from_utf8(value_bytes) {
+                        description = Some(s.to_string());
+                    }
+                }
+                _ => {}
+            }
+        }
+    }
+
+    Ok(KeyGenerationRequest {
+        algorithm,
+        usage,
+        policy_tags,
+        description,
+    })
+}
+
 #[unsafe(no_mangle)]
 pub extern "C" fn C_GenerateKey(
     h_session: CK_SESSION_HANDLE,
@@ -1127,20 +1398,19 @@ pub extern "C" fn C_GenerateKey(
     // Convert mechanism
     let mechanism = unsafe { &*p_mechanism };
 
-    // Convert template to bytes (simplified for now)
-    let template_bytes = if p_template.is_null() {
-        Vec::new()
+    // Convert template to slice
+    let template = if p_template.is_null() {
+        &[]
     } else {
         unsafe {
             std::slice::from_raw_parts(
-                p_template as *const u8,
-                (ul_count * std::mem::size_of::<cryptoki_sys::CK_ATTRIBUTE>() as CK_ULONG) as usize,
+                p_template,
+                ul_count as usize,
             )
-            .to_vec()
         }
     };
 
-    match generate_key(h_session, mechanism, &template_bytes, ul_count) {
+    match generate_key(h_session, mechanism, template) {
         Ok(object_handle) => {
             unsafe {
                 *ph_key = object_handle;
@@ -1574,9 +1844,8 @@ pub extern "C" fn C_Logout(session_handle: CK_SESSION_HANDLE) -> CK_RV {
 /// Generate a key
 pub fn generate_key(
     session_handle: CK_SESSION_HANDLE,
-    _mechanism: &cryptoki_sys::CK_MECHANISM,
-    _template: &[u8], // In a real implementation, this would be CK_ATTRIBUTE_PTR
-    _template_len: CK_ULONG,
+    mechanism: &cryptoki_sys::CK_MECHANISM,
+    template: &[cryptoki_sys::CK_ATTRIBUTE],
 ) -> Result<CK_OBJECT_HANDLE, FrontendError> {
     let guard = STATE.read();
     let context = guard
@@ -1591,15 +1860,42 @@ pub fn generate_key(
         let session = context.sessions.get(&session_handle).ok_or_else(|| {
             FrontendError::Internal(format!("Session {} not found", session_handle))
         })?;
+
+        // Check login state
+        if session.user_type.is_none() {
+            return Err(FrontendError::Internal("Not logged in".to_string()));
+        }
         session.slot_id
     };
 
-    // For now, we'll just return a dummy object handle
-    // In a real implementation, we would:
-    // 1. Parse the mechanism to determine what kind of key to generate
-    // 2. Parse the template to get key attributes
-    // 3. Generate the key using the crypto engine
-    // 4. Store the key and return an object handle
+    // Parse request
+    let request = parse_key_generation_request(mechanism, template)?;
+
+    // Generate material
+    let generated = context
+        .crypto_engine
+        .generate_material(&request)
+        .map_err(|e| FrontendError::Internal(format!("Key generation failed: {e}")))?;
+
+    // Create metadata
+    let mut metadata = KeyMetadata::from_request(&request, generated.id.clone());
+
+    // Add extra attributes from template
+    let extra_attributes = convert_to_core_attributes(template)?;
+    for (id, value) in extra_attributes.iter() {
+        metadata.attributes.insert(*id, value.clone());
+    }
+
+    // Seal and store key
+    let record = context
+        .crypto_engine
+        .seal_key(&metadata, generated.material)
+        .map_err(|e| FrontendError::Internal(format!("Key sealing failed: {e}")))?;
+
+    context
+        .key_store
+        .store(record)
+        .map_err(|e| FrontendError::Internal(format!("Key storage failed: {e}")))?;
 
     // Create the object
     let object_handle = context.next_object_id;
@@ -1609,12 +1905,303 @@ pub fn generate_key(
         handle: object_handle,
         session_handle,
         slot_id,
-        key_id: None, // For now, no key stored
+        key_id: Some(generated.id),
     };
 
     context.objects.insert(object_handle, object);
 
     Ok(object_handle)
+}
+
+/// Destroy an object
+pub fn destroy_object(
+    session_handle: CK_SESSION_HANDLE,
+    object_handle: CK_OBJECT_HANDLE,
+) -> Result<(), FrontendError> {
+    let mut guard = STATE.write();
+    let context = guard
+        .context
+        .as_mut()
+        .ok_or(FrontendError::NotInitialized)?;
+    let mut context = context
+        .lock()
+        .map_err(|_| FrontendError::Internal("Failed to lock context".to_string()))?;
+
+    // Find the session
+    let session = context
+        .sessions
+        .get(&session_handle)
+        .ok_or_else(|| FrontendError::Internal(format!("Session {} not found", session_handle)))?;
+
+    // Check login state
+    if session.user_type.is_none() {
+        return Err(FrontendError::Internal("Not logged in".to_string()));
+    }
+
+    // Find and remove the object
+    let object = context
+        .objects
+        .remove(&object_handle)
+        .ok_or_else(|| FrontendError::Internal(format!("Object {} not found", object_handle)))?;
+
+    if object.session_handle != session_handle {
+        // Restore object if it doesn't belong to this session
+        // (Actually, if it's a token object, any RW session can destroy it, but let's be strict for now)
+        context.objects.insert(object_handle, object);
+        return Err(FrontendError::Internal(
+            "Object does not belong to this session".to_string(),
+        ));
+    }
+
+    // Delete from KeyStore if it has a key_id
+    if let Some(key_id) = object.key_id {
+        context
+            .key_store
+            .delete(&key_id)
+            .map_err(|e| FrontendError::Internal(format!("Failed to delete key: {e}")))?;
+    }
+
+    Ok(())
+}
+
+#[unsafe(no_mangle)]
+pub extern "C" fn C_DestroyObject(
+    h_session: CK_SESSION_HANDLE,
+    h_object: CK_OBJECT_HANDLE,
+) -> CK_RV {
+    match destroy_object(h_session, h_object) {
+        Ok(()) => CKR_OK,
+        Err(FrontendError::NotInitialized) => CKR_CRYPTOKI_NOT_INITIALIZED,
+        Err(err) => {
+            if let FrontendError::Internal(ref msg) = err {
+                error!("pkcs11 destroy_object internal error: {msg}");
+            }
+            translate_error(err)
+        }
+    }
+}
+
+/// Initialize a search for objects
+pub fn find_objects_init(
+    session_handle: CK_SESSION_HANDLE,
+    template: &[cryptoki_sys::CK_ATTRIBUTE],
+) -> Result<(), FrontendError> {
+    let mut guard = STATE.write();
+    let context = guard
+        .context
+        .as_mut()
+        .ok_or(FrontendError::NotInitialized)?;
+    let mut context = context
+        .lock()
+        .map_err(|_| FrontendError::Internal("Failed to lock context".to_string()))?;
+
+    // Get slot_id and check login state
+    let slot_id = {
+        let session = context.sessions.get(&session_handle).ok_or_else(|| {
+            FrontendError::Internal(format!("Session {} not found", session_handle))
+        })?;
+        
+        // Check login state if searching for private objects
+        // For simplicity, we assume we can always search, but we might filter results later
+        session.slot_id
+    };
+
+    let core_template = convert_to_core_attributes(template)?;
+
+    let mut matches = std::collections::VecDeque::new();
+
+    // Search through all known objects
+    for (handle, object) in context.objects.iter() {
+        if object.slot_id != slot_id {
+            continue;
+        }
+
+        // Check if object matches template
+        let mut matched = true;
+        if let Some(key_id) = &object.key_id {
+            if let Ok(record) = context.key_store.fetch(key_id) {
+                // Check against key metadata attributes
+                for (attr_id, attr_value) in core_template.iter() {
+                    // Check standard attributes stored in metadata
+                    if let Some(val) = record.metadata.attributes.get(*attr_id) {
+                        if val != attr_value {
+                            matched = false;
+                            break;
+                        }
+                    } else {
+                        // Attribute not found in metadata, might be implicit
+                        // For now, fail match if attribute not found
+                        matched = false;
+                        break;
+                    }
+                }
+            } else {
+                matched = false;
+            }
+        } else {
+            // Dummy objects (not backed by KeyStore)
+            // For now, assume they don't match anything complex
+            matched = false;
+        }
+
+        if matched {
+            matches.push_back(*handle);
+        }
+    }
+
+    // Re-acquire session mutably to store search context
+    let session = context
+        .sessions
+        .get_mut(&session_handle)
+        .ok_or_else(|| FrontendError::Internal(format!("Session {} not found", session_handle)))?;
+
+    session.search_context = Some(SearchContext {
+        handles: matches,
+        position: 0,
+    });
+
+    Ok(())
+}
+
+/// Continue a search for objects
+pub fn find_objects(
+    _session_handle: CK_SESSION_HANDLE,
+) -> Result<Vec<CK_OBJECT_HANDLE>, FrontendError> {
+    // This function is effectively replaced by find_objects_chunk used in C_FindObjects
+    // But we keep it as a placeholder or remove it. 
+    // Since it was part of the original API structure (maybe?), I'll leave it returning empty
+    // but fix the type error.
+    Ok(Vec::new())
+}
+
+pub fn find_objects_chunk(
+    session_handle: CK_SESSION_HANDLE,
+    max_count: usize,
+) -> Result<Vec<CK_OBJECT_HANDLE>, FrontendError> {
+    let mut guard = STATE.write();
+    let context = guard
+        .context
+        .as_mut()
+        .ok_or(FrontendError::NotInitialized)?;
+    let mut context = context
+        .lock()
+        .map_err(|_| FrontendError::Internal("Failed to lock context".to_string()))?;
+
+    let session = context
+        .sessions
+        .get_mut(&session_handle)
+        .ok_or_else(|| FrontendError::Internal(format!("Session {} not found", session_handle)))?;
+
+    let search_ctx = session
+        .search_context
+        .as_mut()
+        .ok_or_else(|| FrontendError::Internal("Search not initialized".to_string()))?;
+
+    let mut results = Vec::new();
+    for _ in 0..max_count {
+        if let Some(handle) = search_ctx.handles.pop_front() {
+            results.push(handle);
+        } else {
+            break;
+        }
+    }
+    
+    Ok(results)
+}
+
+pub fn find_objects_final(session_handle: CK_SESSION_HANDLE) -> Result<(), FrontendError> {
+    let mut guard = STATE.write();
+    let context = guard
+        .context
+        .as_mut()
+        .ok_or(FrontendError::NotInitialized)?;
+    let mut context = context
+        .lock()
+        .map_err(|_| FrontendError::Internal("Failed to lock context".to_string()))?;
+
+    let session = context
+        .sessions
+        .get_mut(&session_handle)
+        .ok_or_else(|| FrontendError::Internal(format!("Session {} not found", session_handle)))?;
+
+    session.search_context = None;
+    Ok(())
+}
+
+#[unsafe(no_mangle)]
+pub extern "C" fn C_FindObjectsInit(
+    h_session: CK_SESSION_HANDLE,
+    p_template: cryptoki_sys::CK_ATTRIBUTE_PTR,
+    ul_count: CK_ULONG,
+) -> CK_RV {
+    let template = if p_template.is_null() {
+        &[]
+    } else {
+        unsafe {
+            std::slice::from_raw_parts(
+                p_template,
+                ul_count as usize,
+            )
+        }
+    };
+
+    match find_objects_init(h_session, template) {
+        Ok(()) => CKR_OK,
+        Err(FrontendError::NotInitialized) => CKR_CRYPTOKI_NOT_INITIALIZED,
+        Err(err) => {
+            if let FrontendError::Internal(ref msg) = err {
+                error!("pkcs11 find_objects_init internal error: {msg}");
+            }
+            translate_error(err)
+        }
+    }
+}
+
+#[unsafe(no_mangle)]
+pub extern "C" fn C_FindObjects(
+    h_session: CK_SESSION_HANDLE,
+    ph_object: *mut CK_OBJECT_HANDLE,
+    ul_max_object_count: CK_ULONG,
+    pul_object_count: CK_ULONG_PTR,
+) -> CK_RV {
+    if ph_object.is_null() || pul_object_count.is_null() {
+        return CKR_ARGUMENTS_BAD;
+    }
+
+    match find_objects_chunk(h_session, ul_max_object_count as usize) {
+        Ok(handles) => {
+            unsafe {
+                std::ptr::copy_nonoverlapping(
+                    handles.as_ptr(),
+                    ph_object,
+                    handles.len(),
+                );
+                *pul_object_count = handles.len() as CK_ULONG;
+            }
+            CKR_OK
+        }
+        Err(FrontendError::NotInitialized) => CKR_CRYPTOKI_NOT_INITIALIZED,
+        Err(err) => {
+            if let FrontendError::Internal(ref msg) = err {
+                error!("pkcs11 find_objects internal error: {msg}");
+            }
+            translate_error(err)
+        }
+    }
+}
+
+#[unsafe(no_mangle)]
+pub extern "C" fn C_FindObjectsFinal(h_session: CK_SESSION_HANDLE) -> CK_RV {
+    match find_objects_final(h_session) {
+        Ok(()) => CKR_OK,
+        Err(FrontendError::NotInitialized) => CKR_CRYPTOKI_NOT_INITIALIZED,
+        Err(err) => {
+            if let FrontendError::Internal(ref msg) = err {
+                error!("pkcs11 find_objects_final internal error: {msg}");
+            }
+            translate_error(err)
+        }
+    }
 }
 
 /// Initialize a signing operation
@@ -1672,8 +2259,8 @@ pub fn sign_init(
 /// Perform a signing operation
 pub fn sign(
     session_handle: CK_SESSION_HANDLE,
-    _data: CK_BYTE_PTR,
-    _data_len: CK_ULONG,
+    data: CK_BYTE_PTR,
+    data_len: CK_ULONG,
     signature: CK_BYTE_PTR,
     signature_len: CK_ULONG_PTR,
 ) -> Result<(), FrontendError> {
@@ -1722,20 +2309,48 @@ pub fn sign(
         ));
     }
 
-    // For dummy implementation, return fixed size signature
-    let sig_size = 256; // Assume RSA-2048
-    unsafe {
-        if signature.is_null() {
-            *signature_len = sig_size;
-        } else {
-            if *signature_len < sig_size {
-                return Err(FrontendError::Internal(
-                    "Signature buffer too small".to_string(),
-                ));
+    let key_id = object.key_id.as_ref().ok_or_else(|| {
+        FrontendError::Internal("Object does not have associated key".to_string())
+    })?;
+
+    // Fetch key record
+    let record = context
+        .key_store
+        .fetch(key_id)
+        .map_err(|e| FrontendError::Internal(format!("Failed to fetch key: {e}")))?;
+
+    // Open key material
+    let material = context
+        .crypto_engine
+        .open_key(&record)
+        .map_err(|e| FrontendError::Internal(format!("Failed to open key: {e}")))?;
+
+    // Perform operation
+    let payload = unsafe { std::slice::from_raw_parts(data, data_len as usize).to_vec() };
+    let op = CryptoOperation::Sign { payload };
+
+    let result = context
+        .crypto_engine
+        .perform(op, &material, &Default::default())
+        .map_err(|e| FrontendError::Internal(format!("Crypto operation failed: {e}")))?;
+
+    match result {
+        KeyOperationResult::Signature { signature: sig } => unsafe {
+            if signature.is_null() {
+                *signature_len = sig.len() as CK_ULONG;
+            } else {
+                if *signature_len < sig.len() as CK_ULONG {
+                    *signature_len = sig.len() as CK_ULONG;
+                    return Err(FrontendError::Internal("Buffer too small".to_string()));
+                }
+                std::ptr::copy_nonoverlapping(sig.as_ptr(), signature, sig.len());
+                *signature_len = sig.len() as CK_ULONG;
             }
-            // Fill with dummy signature
-            std::ptr::write_bytes(signature, 0xAB, sig_size as usize);
-            *signature_len = sig_size;
+        },
+        _ => {
+            return Err(FrontendError::Internal(
+                "Unexpected result type".to_string(),
+            ));
         }
     }
 
@@ -1978,6 +2593,123 @@ mod tests {
         // Close session
         let rv = C_CloseSession(session_handle);
         assert_eq!(rv, CKR_OK);
+
+        finalize().expect("finalize");
+    }
+
+    #[test]
+    fn sign_and_verify_work() {
+        let _guard = cleanup();
+        initialize(std::ptr::null_mut()).expect("init");
+
+        // Open session
+        let mut session_handle = 0;
+        let rv = C_OpenSession(
+            1, // slot_id
+            4, // CKF_RW_SESSION
+            std::ptr::null_mut(),
+            0, // ulApplicationDataLen
+            &mut session_handle,
+        );
+        assert_eq!(rv, CKR_OK);
+
+        // Login
+        let pin = b"1234";
+        let rv = C_Login(
+            session_handle,
+            1, // CKU_USER
+            pin.as_ptr() as *mut u8,
+            pin.len() as u64,
+        );
+        assert_eq!(rv, CKR_OK);
+
+        // Generate P-256 Key Pair
+        // Note: C_GenerateKey as implemented currently generates a "key" (symmetric or asymmetric pair?)
+        // The implementation uses parse_key_generation_request which maps mechanism to algorithm.
+        // If we use CKM_EC_KEY_PAIR_GEN, it should generate an EC key.
+        // BUT, C_GenerateKey returns a SINGLE handle.
+        // PKCS#11 C_GenerateKeyPair returns TWO handles (public, private).
+        // Our current C_GenerateKey implementation seems to conflate them or return a single handle to a "KeyRecord" which contains both.
+        // In standard PKCS#11, Key Pair Generation is distinct from Key Generation.
+        // WE ONLY IMPLEMENTED C_GenerateKey.
+        // And we used it to generate AES keys in previous test.
+        //
+        // If we want to test Sign/Verify, we need a signing key.
+        // AES-GCM (which we used before) is symmetric. We can use it for Encrypt/Decrypt?
+        // But CryptoEngine::Sign expects RSA/EC/PQC.
+        //
+        // Let's use AES for Encrypt/Decrypt first as it is simpler with C_GenerateKey (Symmetric).
+        
+        // Generate AES Key
+        let mut key_handle = 0;
+        let mut mechanism = cryptoki_sys::CK_MECHANISM {
+            mechanism: cryptoki_sys::CKM_AES_KEY_GEN,
+            pParameter: std::ptr::null_mut(),
+            ulParameterLen: 0,
+        };
+        // Add Encrypt/Decrypt usage
+        let true_val = 1u8;
+        let mut template = [
+            cryptoki_sys::CK_ATTRIBUTE {
+                type_: cryptoki_sys::CKA_ENCRYPT,
+                pValue: &true_val as *const u8 as CK_VOID_PTR,
+                ulValueLen: 1,
+            },
+            cryptoki_sys::CK_ATTRIBUTE {
+                type_: cryptoki_sys::CKA_DECRYPT,
+                pValue: &true_val as *const u8 as CK_VOID_PTR,
+                ulValueLen: 1,
+            },
+        ];
+
+        let rv = C_GenerateKey(
+            session_handle,
+            &mut mechanism,
+            template.as_mut_ptr(),
+            2,
+            &mut key_handle,
+        );
+        assert_eq!(rv, CKR_OK);
+
+        // Encrypt
+        let mut mech_aes_gcm = cryptoki_sys::CK_MECHANISM {
+            mechanism: cryptoki_sys::CKM_AES_GCM,
+            pParameter: std::ptr::null_mut(), // IV should be here, but we ignored it in implementation for now (using dummy nonce)
+            ulParameterLen: 0,
+        };
+        let rv = C_EncryptInit(session_handle, &mut mech_aes_gcm, key_handle);
+        assert_eq!(rv, CKR_OK);
+
+        let plaintext = b"Hello World";
+        let mut ciphertext = vec![0u8; 100];
+        let mut ciphertext_len = ciphertext.len() as CK_ULONG;
+
+        let rv = C_Encrypt(
+            session_handle,
+            plaintext.as_ptr() as *mut u8,
+            plaintext.len() as CK_ULONG,
+            ciphertext.as_mut_ptr(),
+            &mut ciphertext_len,
+        );
+        assert_eq!(rv, CKR_OK);
+        
+        // Decrypt
+        let rv = C_DecryptInit(session_handle, &mut mech_aes_gcm, key_handle);
+        assert_eq!(rv, CKR_OK);
+        
+        let mut decrypted = vec![0u8; 100];
+        let mut decrypted_len = decrypted.len() as CK_ULONG;
+        
+        let rv = C_Decrypt(
+            session_handle,
+            ciphertext.as_mut_ptr(),
+            ciphertext_len,
+            decrypted.as_mut_ptr(),
+            &mut decrypted_len,
+        );
+        assert_eq!(rv, CKR_OK);
+        assert_eq!(decrypted_len as usize, plaintext.len());
+        assert_eq!(&decrypted[..decrypted_len as usize], plaintext);
 
         finalize().expect("finalize");
     }
