@@ -4,7 +4,7 @@ use serde::{Deserialize, Serialize};
 
 use crate::{
     error::HsmResult,
-    models::{KeyMaterial, KeyMaterialType},
+    models::{KeyAlgorithm, KeyMaterial, KeyMaterialType},
 };
 
 /// Post-Quantum Cryptography provider trait

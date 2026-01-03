@@ -35,7 +35,10 @@ pub use audit::{
     AuditEvent, AuditLog, AuditRecord, AuditSink, FileAuditLog, SqliteAuditLog, compute_event_hash,
 };
 pub use checkpoint::CheckpointScheduler;
-pub use crypto::{CryptoEngine, CryptoOperation, KeyOperationResult};
+pub use crypto::{
+    CryptoEngine, CryptoOperation, HardwareCryptoProvider, KeyOperationResult,
+    MockHardwareProvider,
+};
 pub use error::{HsmError, HsmResult};
 pub use key_rotation::KeyRotationScheduler;
 pub use models::{

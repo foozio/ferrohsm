@@ -28,7 +28,8 @@ use tera::Tera;
 use time::{Duration as TimeDuration, OffsetDateTime, format_description::well_known::Rfc3339};
 use tokio::{signal, time::MissedTickBehavior};
 use tower_http::{services::ServeDir, trace::TraceLayer};
-use tracing::{Level, error, info};
+use tracing::{error, info};
+use tracing_subscriber::{layer::SubscriberExt, util::SubscriberInitExt};
 use uuid::Uuid;
 
 use crate::tls::TlsSetup;
@@ -670,9 +671,19 @@ impl CacheStore {
 
 #[tokio::main]
 async fn main() -> anyhow::Result<()> {
-    tracing_subscriber::fmt()
-        .with_max_level(Level::INFO)
-        .with_target(false)
+    // Initialize OpenTelemetry tracing
+    let tracer = opentelemetry_otlp::new_pipeline()
+        .tracing()
+        .with_exporter(opentelemetry_otlp::new_exporter().tonic())
+        .install_batch(opentelemetry_sdk::runtime::Tokio)
+        .map_err(|e| anyhow::anyhow!("failed to initialize OpenTelemetry: {e}"))?;
+
+    // Set up tracing subscriber with OpenTelemetry
+    let telemetry = tracing_opentelemetry::layer().with_tracer(tracer);
+    tracing_subscriber::registry()
+        .with(tracing_subscriber::EnvFilter::from_default_env())
+        .with(telemetry)
+        .with(tracing_subscriber::fmt::layer().with_target(false))
         .init();
 
     let args = Args::parse();
@@ -933,8 +944,21 @@ async fn health<P: PolicyEngine>(
     info!("Health check called");
     let stats = state.rate_limiter.stats();
     let uptime_seconds = state.startup.elapsed().as_secs();
+
+    // Perform basic storage health check
+    let storage_healthy = tokio::task::spawn_blocking(move || {
+        // Try to list keys to check storage connectivity
+        state.manager.list_keys(&AuthContext {
+            actor_id: "health-check".to_string(),
+            session_id: uuid::Uuid::new_v4(),
+            roles: vec![Role::Administrator], // Use admin role for health check
+            client_fingerprint: None,
+            source_ip: None,
+        }).is_ok()
+    }).await.map_err(|_| AppError::internal("health check task failed"))?;
+
     Ok(Json(HealthResponse {
-        status: "ok",
+        status: if storage_healthy { "ok" } else { "degraded" },
         uptime_seconds,
         cache_entries: state.key_cache.len(),
         rate_limit_per_second: stats.per_second,
@@ -1116,33 +1140,42 @@ async fn sign_payload<P: PolicyEngine>(
     AxumPath(id): AxumPath<String>,
     Json(payload): Json<SignRequest>,
 ) -> Result<Json<SignResponse>, AppError> {
-    let ctx = authenticate_request(&state, &headers, addr.ip())?;
-    // Validate payload size before decoding to prevent resource exhaustion
-    if payload.payload_b64.len() > 10_000_000 {
-        // 10MB limit
-        return Err(AppError::bad_request("payload too large"));
-    }
+    let start = std::time::Instant::now();
+    let result = async {
+        let ctx = authenticate_request(&state, &headers, addr.ip())?;
+        // Validate payload size before decoding to prevent resource exhaustion
+        if payload.payload_b64.len() > 10_000_000 {
+            // 10MB limit
+            return Err(AppError::bad_request("payload too large"));
+        }
 
-    let data = B64
-        .decode(&payload.payload_b64)
-        .map_err(|_| AppError::bad_request("invalid base64 payload"))?;
+        let data = B64
+            .decode(&payload.payload_b64)
+            .map_err(|_| AppError::bad_request("invalid base64 payload"))?;
 
-    // Additional validation for decoded data size
-    if data.len() > 1_000_000 {
-        // 1MB limit for decoded data
-        return Err(AppError::bad_request("decoded payload too large"));
+        // Additional validation for decoded data size
+        if data.len() > 1_000_000 {
+            // 1MB limit for decoded data
+            return Err(AppError::bad_request("decoded payload too large"));
+        }
+        let operation = hsm_core::CryptoOperation::Sign { payload: data };
+        let result = state
+            .manager
+            .perform_operation(&id, operation, &ctx, &OperationContext::new())?;
+        if let hsm_core::KeyOperationResult::Signature { signature } = result {
+            Ok(Json(SignResponse {
+                signature_b64: B64.encode(signature),
+            }))
+        } else {
+            Err(AppError::internal("unexpected operation result"))
+        }
+    }.await;
+    let duration = start.elapsed();
+    metrics::histogram!("ferrohsm_operation_duration_seconds", "operation" => "sign").record(duration.as_secs_f64());
+    if result.is_err() {
+        metrics::counter!("ferrohsm_operation_errors_total", "operation" => "sign").increment(1);
     }
-    let operation = hsm_core::CryptoOperation::Sign { payload: data };
-    let result = state
-        .manager
-        .perform_operation(&id, operation, &ctx, &OperationContext::new())?;
-    if let hsm_core::KeyOperationResult::Signature { signature } = result {
-        Ok(Json(SignResponse {
-            signature_b64: B64.encode(signature),
-        }))
-    } else {
-        Err(AppError::internal("unexpected operation result"))
-    }
+    result
 }
 
 async fn encrypt_payload<P: PolicyEngine>(
@@ -1152,59 +1185,68 @@ async fn encrypt_payload<P: PolicyEngine>(
     AxumPath(id): AxumPath<String>,
     Json(payload): Json<EncryptRequest>,
 ) -> Result<Json<EncryptResponse>, AppError> {
-    let ctx = authenticate_request(&state, &headers, addr.ip())?;
-    // Validate payload size before decoding to prevent resource exhaustion
-    if payload.plaintext_b64.len() > 10_000_000 {
-        // 10MB limit
-        return Err(AppError::bad_request("plaintext too large"));
-    }
-
-    let plaintext = B64
-        .decode(&payload.plaintext_b64)
-        .map_err(|_| AppError::bad_request("invalid base64 plaintext"))?;
-
-    // Additional validation for decoded data size
-    if plaintext.len() > 1_000_000 {
-        // 1MB limit for decoded data
-        return Err(AppError::bad_request("plaintext too large"));
-    }
-    let mut op_ctx = OperationContext::new();
-    if let Some(aad) = payload.associated_data_b64 {
-        // Validate AAD size
-        if aad.len() > 1_000_000 {
-            // 1MB limit for AAD
-            return Err(AppError::bad_request("associated data too large"));
+    let start = std::time::Instant::now();
+    let result = async {
+        let ctx = authenticate_request(&state, &headers, addr.ip())?;
+        // Validate payload size before decoding to prevent resource exhaustion
+        if payload.plaintext_b64.len() > 10_000_000 {
+            // 10MB limit
+            return Err(AppError::bad_request("plaintext too large"));
         }
 
-        let decoded_aad = B64
-            .decode(&aad)
-            .map_err(|_| AppError::bad_request("invalid associated data"))?;
+        let plaintext = B64
+            .decode(&payload.plaintext_b64)
+            .map_err(|_| AppError::bad_request("invalid base64 plaintext"))?;
 
-        // Additional validation for decoded AAD size
-        if decoded_aad.len() > 100_000 {
-            // 100KB limit for decoded AAD
-            return Err(AppError::bad_request("associated data too large"));
+        // Additional validation for decoded data size
+        if plaintext.len() > 1_000_000 {
+            // 1MB limit for decoded data
+            return Err(AppError::bad_request("plaintext too large"));
         }
+        let mut op_ctx = OperationContext::new();
+        if let Some(aad) = payload.associated_data_b64 {
+            // Validate AAD size
+            if aad.len() > 1_000_000 {
+                // 1MB limit for AAD
+                return Err(AppError::bad_request("associated data too large"));
+            }
 
-        op_ctx.associated_data = Some(decoded_aad);
-    }
-    let result = state.manager.perform_operation(
-        &id,
-        hsm_core::CryptoOperation::Encrypt {
-            plaintext: plaintext.clone(),
-        },
-        &ctx,
-        &op_ctx,
-    )?;
+            let decoded_aad = B64
+                .decode(&aad)
+                .map_err(|_| AppError::bad_request("invalid associated data"))?;
 
-    if let hsm_core::KeyOperationResult::Encrypted { ciphertext, nonce } = result {
-        Ok(Json(EncryptResponse {
-            ciphertext_b64: B64.encode(ciphertext),
-            nonce_b64: B64.encode(nonce),
-        }))
-    } else {
-        Err(AppError::internal("unexpected operation result"))
+            // Additional validation for decoded AAD size
+            if decoded_aad.len() > 100_000 {
+                // 100KB limit for decoded AAD
+                return Err(AppError::bad_request("associated data too large"));
+            }
+
+            op_ctx.associated_data = Some(decoded_aad);
+        }
+        let result = state.manager.perform_operation(
+            &id,
+            hsm_core::CryptoOperation::Encrypt {
+                plaintext: plaintext.clone(),
+            },
+            &ctx,
+            &op_ctx,
+        )?;
+
+        if let hsm_core::KeyOperationResult::Encrypted { ciphertext, nonce } = result {
+            Ok(Json(EncryptResponse {
+                ciphertext_b64: B64.encode(ciphertext),
+                nonce_b64: B64.encode(nonce),
+            }))
+        } else {
+            Err(AppError::internal("unexpected operation result"))
+        }
+    }.await;
+    let duration = start.elapsed();
+    metrics::histogram!("ferrohsm_operation_duration_seconds", "operation" => "encrypt").record(duration.as_secs_f64());
+    if result.is_err() {
+        metrics::counter!("ferrohsm_operation_errors_total", "operation" => "encrypt").increment(1);
     }
+    result
 }
 
 async fn decrypt_payload<P: PolicyEngine>(
@@ -1214,73 +1256,82 @@ async fn decrypt_payload<P: PolicyEngine>(
     AxumPath(id): AxumPath<String>,
     Json(payload): Json<DecryptRequest>,
 ) -> Result<Json<DecryptResponse>, AppError> {
-    let ctx = authenticate_request(&state, &headers, addr.ip())?;
-    // Validate payload sizes before decoding
-    if payload.ciphertext_b64.len() > 10_000_000 {
-        // 10MB limit
-        return Err(AppError::bad_request("ciphertext too large"));
-    }
-    if payload.nonce_b64.len() > 1_000 {
-        // Nonce should be small
-        return Err(AppError::bad_request("nonce too large"));
-    }
-
-    let ciphertext = B64
-        .decode(&payload.ciphertext_b64)
-        .map_err(|_| AppError::bad_request("invalid base64 ciphertext"))?;
-    let nonce = B64
-        .decode(&payload.nonce_b64)
-        .map_err(|_| AppError::bad_request("invalid base64 nonce"))?;
-
-    // Additional validation for decoded data sizes
-    if ciphertext.len() > 1_000_000 {
-        // 1MB limit for decoded ciphertext
-        return Err(AppError::bad_request("ciphertext too large"));
-    }
-    if nonce.len() > 100 {
-        // Nonce should be very small
-        return Err(AppError::bad_request("nonce too large"));
-    }
-    let mut op_ctx = OperationContext::new();
-    let associated = if let Some(aad) = payload.associated_data_b64 {
-        // Validate AAD size
-        if aad.len() > 1_000_000 {
-            // 1MB limit for AAD
-            return Err(AppError::bad_request("associated data too large"));
+    let start = std::time::Instant::now();
+    let result = async {
+        let ctx = authenticate_request(&state, &headers, addr.ip())?;
+        // Validate payload sizes before decoding
+        if payload.ciphertext_b64.len() > 10_000_000 {
+            // 10MB limit
+            return Err(AppError::bad_request("ciphertext too large"));
+        }
+        if payload.nonce_b64.len() > 1_000 {
+            // Nonce should be small
+            return Err(AppError::bad_request("nonce too large"));
         }
 
-        let decoded = B64
-            .decode(&aad)
-            .map_err(|_| AppError::bad_request("invalid associated data"))?;
+        let ciphertext = B64
+            .decode(&payload.ciphertext_b64)
+            .map_err(|_| AppError::bad_request("invalid base64 ciphertext"))?;
+        let nonce = B64
+            .decode(&payload.nonce_b64)
+            .map_err(|_| AppError::bad_request("invalid base64 nonce"))?;
 
-        // Additional validation for decoded AAD size
-        if decoded.len() > 100_000 {
-            // 100KB limit for decoded AAD
-            return Err(AppError::bad_request("associated data too large"));
+        // Additional validation for decoded data sizes
+        if ciphertext.len() > 1_000_000 {
+            // 1MB limit for decoded ciphertext
+            return Err(AppError::bad_request("ciphertext too large"));
         }
+        if nonce.len() > 100 {
+            // Nonce should be very small
+            return Err(AppError::bad_request("nonce too large"));
+        }
+        let mut op_ctx = OperationContext::new();
+        let associated = if let Some(aad) = payload.associated_data_b64 {
+            // Validate AAD size
+            if aad.len() > 1_000_000 {
+                // 1MB limit for AAD
+                return Err(AppError::bad_request("associated data too large"));
+            }
 
-        op_ctx.associated_data = Some(decoded.clone());
-        Some(decoded)
-    } else {
-        None
-    };
-    let result = state.manager.perform_operation(
-        &id,
-        hsm_core::CryptoOperation::Decrypt {
-            ciphertext,
-            nonce,
-            associated_data: associated,
-        },
-        &ctx,
-        &op_ctx,
-    )?;
-    if let hsm_core::KeyOperationResult::Decrypted { plaintext } = result {
-        Ok(Json(DecryptResponse {
-            plaintext_b64: B64.encode(plaintext),
-        }))
-    } else {
-        Err(AppError::internal("unexpected operation result"))
+            let decoded = B64
+                .decode(&aad)
+                .map_err(|_| AppError::bad_request("invalid associated data"))?;
+
+            // Additional validation for decoded AAD size
+            if decoded.len() > 100_000 {
+                // 100KB limit for decoded AAD
+                return Err(AppError::bad_request("associated data too large"));
+            }
+
+            op_ctx.associated_data = Some(decoded.clone());
+            Some(decoded)
+        } else {
+            None
+        };
+        let result = state.manager.perform_operation(
+            &id,
+            hsm_core::CryptoOperation::Decrypt {
+                ciphertext,
+                nonce,
+                associated_data: associated,
+            },
+            &ctx,
+            &op_ctx,
+        )?;
+        if let hsm_core::KeyOperationResult::Decrypted { plaintext } = result {
+            Ok(Json(DecryptResponse {
+                plaintext_b64: B64.encode(plaintext),
+            }))
+        } else {
+            Err(AppError::internal("unexpected operation result"))
+        }
+    }.await;
+    let duration = start.elapsed();
+    metrics::histogram!("ferrohsm_operation_duration_seconds", "operation" => "decrypt").record(duration.as_secs_f64());
+    if result.is_err() {
+        metrics::counter!("ferrohsm_operation_errors_total", "operation" => "decrypt").increment(1);
     }
+    result
 }
 
 async fn list_approvals<P: PolicyEngine>(

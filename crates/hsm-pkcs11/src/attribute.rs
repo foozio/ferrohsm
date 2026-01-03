@@ -308,6 +308,38 @@ fn slh_dsa_security_level_to_ulong(level: SlhDsaSecurityLevel) -> CK_ULONG {
     }
 }
 
+/// Convert KeyAlgorithm to ULONG representation for hybrid component tracking
+#[cfg(feature = "pqc")]
+fn key_algorithm_to_ulong(algorithm: KeyAlgorithm) -> CK_ULONG {
+    match algorithm {
+        KeyAlgorithm::Aes256Gcm => 1,
+        KeyAlgorithm::Rsa2048 => 2,
+        KeyAlgorithm::Rsa4096 => 3,
+        KeyAlgorithm::P256 => 4,
+        KeyAlgorithm::P384 => 5,
+        KeyAlgorithm::MlKem512 => 10 + 512,
+        KeyAlgorithm::MlKem768 => 10 + 768,
+        KeyAlgorithm::MlKem1024 => 10 + 1024,
+        KeyAlgorithm::MlDsa44 => 20 + 44,
+        KeyAlgorithm::MlDsa65 => 20 + 65,
+        KeyAlgorithm::MlDsa87 => 20 + 87,
+        KeyAlgorithm::SlhDsa128f => 30 + 1281,
+        KeyAlgorithm::SlhDsa128s => 30 + 1282,
+        KeyAlgorithm::SlhDsa192f => 30 + 1921,
+        KeyAlgorithm::SlhDsa192s => 30 + 1922,
+        KeyAlgorithm::SlhDsa256f => 30 + 2561,
+        KeyAlgorithm::SlhDsa256s => 30 + 2562,
+        KeyAlgorithm::HybridP256MlKem512 => 40 + 512,
+        KeyAlgorithm::HybridP256MlKem768 => 40 + 768,
+        KeyAlgorithm::HybridP384MlKem1024 => 40 + 1024,
+        KeyAlgorithm::HybridP256MlDsa44 => 50 + 44,
+        KeyAlgorithm::HybridP256MlDsa65 => 50 + 65,
+        KeyAlgorithm::HybridP384MlDsa87 => 50 + 87,
+    }
+}
+    }
+}
+
 /// Get the value of a specific attribute for a key
 pub fn get_attribute_value(
     metadata: &KeyMetadata,
@@ -420,13 +452,8 @@ pub fn get_attribute_value(
         CKA_ML_DSA_SECURITY_LEVEL => algorithm_to_ml_dsa_security_level(metadata.algorithm)
             .map(|level| ml_dsa_security_level_to_ulong(level).to_be_bytes().to_vec()),
         #[cfg(feature = "pqc")]
-        CKA_SLH_DSA_SECURITY_LEVEL => {
-            algorithm_to_slh_dsa_security_level(metadata.algorithm).map(|level| {
-                slh_dsa_security_level_to_ulong(level)
-                    .to_be_bytes()
-                    .to_vec()
-            })
-        }
+        CKA_SLH_DSA_SECURITY_LEVEL => algorithm_to_slh_dsa_security_level(metadata.algorithm)
+            .map(|level| slh_dsa_security_level_to_ulong(level).to_be_bytes().to_vec()),
         _ => None, // Attribute not supported
     }
 }

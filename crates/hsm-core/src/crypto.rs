@@ -40,6 +40,298 @@ use crate::{
     rbac::Action,
     storage::{KeyRecord, SealedKeyMaterial},
 };
+
+/// Trait for hardware-backed cryptographic operations.
+/// Implementations provide access to hardware security modules (HSMs) or secure enclaves.
+pub trait HardwareCryptoProvider: Send + Sync {
+    /// Generate a new key pair or symmetric key in hardware.
+    fn generate_key(&self, algorithm: KeyAlgorithm) -> HsmResult<KeyMaterial>;
+
+    /// Import an existing key into hardware storage.
+    fn import_key(&self, material: KeyMaterial) -> HsmResult<String>; // returns key_id
+
+    /// Sign data using a hardware-protected key.
+    fn sign(&self, key_id: &str, data: &[u8]) -> HsmResult<Vec<u8>>;
+
+    /// Verify a signature using a hardware-protected key.
+    fn verify(&self, key_id: &str, data: &[u8], signature: &[u8]) -> HsmResult<bool>;
+
+    /// Derive a new key from an existing hardware key using HKDF.
+    fn derive_key_hkdf(&self, base_key_id: &str, salt: &[u8], info: &[u8], output_length: usize) -> HsmResult<String>;
+
+    /// Derive a key using PBKDF2.
+    fn derive_key_pbkdf2(&self, password: &[u8], salt: &[u8], iterations: u32, output_length: usize) -> HsmResult<String>;
+
+    /// Wrap (encrypt) a key using a hardware-protected wrapping key.
+    fn wrap_key(&self, wrapping_key_id: &str, key_material: &[u8]) -> HsmResult<Vec<u8>>;
+
+    /// Unwrap (decrypt) a key using a hardware-protected wrapping key.
+    fn unwrap_key(&self, wrapping_key_id: &str, wrapped_key: &[u8]) -> HsmResult<Vec<u8>>;
+
+    /// Get the provider's identifier.
+    fn provider_id(&self) -> &'static str;
+
+    /// Check if the provider supports a specific algorithm.
+    fn supports_algorithm(&self, algorithm: &KeyAlgorithm) -> bool;
+}
+
+/// Configuration for hardware crypto providers.
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
+pub enum HardwareConfig {
+    /// Mock provider for testing
+    Mock,
+    /// AWS CloudHSM configuration
+    AwsCloudHsm {
+        region: String,
+        cluster_id: String,
+        access_key_id: Option<String>,
+        secret_access_key: Option<String>,
+    },
+    /// Azure Managed HSM configuration
+    AzureManagedHsm {
+        vault_url: String,
+        client_id: Option<String>,
+        client_secret: Option<String>,
+        tenant_id: Option<String>,
+    },
+    /// Generic PKCS#11 configuration
+    Pkcs11 {
+        library_path: String,
+        slot_id: Option<u64>,
+        pin: Option<String>,
+    },
+}
+
+/// AWS CloudHSM provider implementation.
+pub struct AwsCloudHsmProvider {
+    region: String,
+    cluster_id: String,
+    #[allow(dead_code)]
+    client: aws_sdk_cloudhsmv2::Client,
+}
+
+impl AwsCloudHsmProvider {
+    pub async fn new(region: String, cluster_id: String) -> HsmResult<Self> {
+        let config = aws_config::defaults(aws_config::BehaviorVersion::latest())
+            .region(aws_sdk_cloudhsmv2::config::Region::new(region.clone()))
+            .load()
+            .await;
+        let client = aws_sdk_cloudhsmv2::Client::new(&config);
+        Ok(Self {
+            region,
+            cluster_id,
+            client,
+        })
+    }
+
+    fn not_implemented(&self, capability: &str) -> HsmError {
+        HsmError::unsupported_algorithm(format!(
+            "AWS CloudHSM ({}) {capability} not yet implemented for cluster {}",
+            self.region, self.cluster_id
+        ))
+    }
+}
+
+impl HardwareCryptoProvider for AwsCloudHsmProvider {
+    fn generate_key(&self, _algorithm: KeyAlgorithm) -> HsmResult<KeyMaterial> {
+        // TODO: Implement key generation using CloudHSM
+        Err(self.not_implemented("key generation"))
+    }
+
+    fn import_key(&self, _material: KeyMaterial) -> HsmResult<String> {
+        // TODO: Implement key import
+        Err(self.not_implemented("key import"))
+    }
+
+    fn sign(&self, _key_id: &str, _data: &[u8]) -> HsmResult<Vec<u8>> {
+        // TODO: Implement signing
+        Err(self.not_implemented("signing"))
+    }
+
+    fn verify(&self, _key_id: &str, _data: &[u8], _signature: &[u8]) -> HsmResult<bool> {
+        // TODO: Implement verification
+        Err(self.not_implemented("verification"))
+    }
+
+    fn derive_key_hkdf(&self, _base_key_id: &str, _salt: &[u8], _info: &[u8], _output_length: usize) -> HsmResult<String> {
+        Err(self.not_implemented("HKDF derivation"))
+    }
+
+    fn derive_key_pbkdf2(&self, _password: &[u8], _salt: &[u8], _iterations: u32, _output_length: usize) -> HsmResult<String> {
+        Err(self.not_implemented("PBKDF2 derivation"))
+    }
+
+    fn wrap_key(&self, _wrapping_key_id: &str, _key_material: &[u8]) -> HsmResult<Vec<u8>> {
+        // TODO: Implement key wrapping
+        Err(self.not_implemented("key wrapping"))
+    }
+
+    fn unwrap_key(&self, _wrapping_key_id: &str, _wrapped_key: &[u8]) -> HsmResult<Vec<u8>> {
+        // TODO: Implement key unwrapping
+        Err(self.not_implemented("key unwrapping"))
+    }
+
+    fn provider_id(&self) -> &'static str {
+        "aws-cloudhsm"
+    }
+
+    fn supports_algorithm(&self, algorithm: &KeyAlgorithm) -> bool {
+        // CloudHSM supports common algorithms
+        matches!(
+            algorithm,
+            KeyAlgorithm::Aes256Gcm | KeyAlgorithm::Rsa2048 | KeyAlgorithm::Rsa4096 | KeyAlgorithm::P256 | KeyAlgorithm::P384
+        )
+    }
+}
+
+impl HardwareConfig {
+    /// Create a hardware provider from this configuration.
+    /// Note: For production use, async initialization may be needed for cloud providers.
+    pub fn create_provider(&self) -> HsmResult<Box<dyn HardwareCryptoProvider>> {
+        match self {
+            HardwareConfig::Mock => Ok(Box::new(MockHardwareProvider::new())),
+            HardwareConfig::AwsCloudHsm { .. } => {
+                // For prototype, create without async initialization
+                // In full implementation, this would need async runtime
+                Err(HsmError::unsupported_algorithm("AWS CloudHSM requires async initialization - use create_provider_async"))
+            }
+            HardwareConfig::AzureManagedHsm { .. } => {
+                // TODO: Implement Azure Managed HSM provider
+                Err(HsmError::unsupported_algorithm("Azure Managed HSM not yet implemented"))
+            }
+            HardwareConfig::Pkcs11 { .. } => {
+                // TODO: Implement PKCS#11 provider
+                Err(HsmError::unsupported_algorithm("PKCS#11 provider not yet implemented"))
+            }
+        }
+    }
+
+    /// Async version for providers that need async initialization.
+    pub async fn create_provider_async(&self) -> HsmResult<Box<dyn HardwareCryptoProvider>> {
+        match self {
+            HardwareConfig::Mock => Ok(Box::new(MockHardwareProvider::new())),
+            HardwareConfig::AwsCloudHsm { region, cluster_id, .. } => {
+                Ok(Box::new(AwsCloudHsmProvider::new(region.clone(), cluster_id.clone()).await?))
+            }
+            HardwareConfig::AzureManagedHsm { .. } => {
+                Err(HsmError::unsupported_algorithm("Azure Managed HSM not yet implemented"))
+            }
+            HardwareConfig::Pkcs11 { .. } => {
+                Err(HsmError::unsupported_algorithm("PKCS#11 provider not yet implemented"))
+            }
+        }
+    }
+}
+
+/// Mock hardware provider for testing and development.
+/// Simulates hardware operations using software crypto.
+pub struct MockHardwareProvider {
+    keys: std::sync::Mutex<std::collections::HashMap<String, KeyMaterial>>,
+    next_id: std::sync::atomic::AtomicU64,
+}
+
+impl MockHardwareProvider {
+    pub fn new() -> Self {
+        Self {
+            keys: std::sync::Mutex::new(std::collections::HashMap::new()),
+            next_id: std::sync::atomic::AtomicU64::new(1),
+        }
+    }
+}
+
+impl HardwareCryptoProvider for MockHardwareProvider {
+    fn generate_key(&self, algorithm: KeyAlgorithm) -> HsmResult<KeyMaterial> {
+        // For mock, delegate to software generation
+        let engine = CryptoEngine::new([0u8; 32], [0u8; 32]);
+        let request = KeyGenerationRequest {
+            algorithm,
+            usage: crate::models::KeyUsage::default(),
+            policy_tags: vec![],
+            description: Some("Mock hardware generated key".to_string()),
+        };
+        engine.generate_material(&request).map(|gk| gk.material)
+    }
+
+    fn import_key(&self, material: KeyMaterial) -> HsmResult<String> {
+        let id = format!("mock-{}", self.next_id.fetch_add(1, std::sync::atomic::Ordering::Relaxed));
+        self.keys.lock().unwrap().insert(id.clone(), material);
+        Ok(id)
+    }
+
+    fn sign(&self, key_id: &str, data: &[u8]) -> HsmResult<Vec<u8>> {
+        let keys = self.keys.lock().unwrap();
+        let material = keys.get(key_id).ok_or_else(|| HsmError::KeyNotFound(key_id.to_string()))?;
+        let engine = CryptoEngine::new([0u8; 32], [0u8; 32]);
+        let op = CryptoOperation::Sign { payload: data.to_vec() };
+        let ctx = crate::models::OperationContext::default();
+        match engine.perform(op, material, &ctx)? {
+            KeyOperationResult::Signature { signature } => Ok(signature),
+            _ => Err(HsmError::Crypto("Unexpected operation result".into())),
+        }
+    }
+
+    fn verify(&self, key_id: &str, data: &[u8], signature: &[u8]) -> HsmResult<bool> {
+        let keys = self.keys.lock().unwrap();
+        let material = keys.get(key_id).ok_or_else(|| HsmError::KeyNotFound(key_id.to_string()))?;
+        let engine = CryptoEngine::new([0u8; 32], [0u8; 32]);
+        let op = CryptoOperation::Verify { payload: data.to_vec(), signature: signature.to_vec() };
+        let ctx = crate::models::OperationContext::default();
+        match engine.perform(op, material, &ctx)? {
+            KeyOperationResult::Verified { valid } => Ok(valid),
+            _ => Err(HsmError::Crypto("Unexpected operation result".into())),
+        }
+    }
+
+    fn derive_key_hkdf(&self, base_key_id: &str, salt: &[u8], info: &[u8], output_length: usize) -> HsmResult<String> {
+        let keys = self.keys.lock().unwrap();
+        let base_material = keys.get(base_key_id).ok_or_else(|| HsmError::KeyNotFound(base_key_id.to_string()))?;
+        let engine = CryptoEngine::new([0u8; 32], [0u8; 32]);
+        let derived = engine.derive_key_hkdf(base_material, salt, info, output_length)?;
+        let new_id = format!("hkdf-{}", self.next_id.fetch_add(1, std::sync::atomic::Ordering::Relaxed));
+        self.keys.lock().unwrap().insert(new_id.clone(), derived);
+        Ok(new_id)
+    }
+
+    fn derive_key_pbkdf2(&self, password: &[u8], salt: &[u8], iterations: u32, output_length: usize) -> HsmResult<String> {
+        let engine = CryptoEngine::new([0u8; 32], [0u8; 32]);
+        let derived = engine.derive_key_pbkdf2(password, salt, iterations, output_length)?;
+        let new_id = format!("pbkdf2-{}", self.next_id.fetch_add(1, std::sync::atomic::Ordering::Relaxed));
+        self.keys.lock().unwrap().insert(new_id.clone(), derived);
+        Ok(new_id)
+    }
+
+    fn wrap_key(&self, wrapping_key_id: &str, key_material: &[u8]) -> HsmResult<Vec<u8>> {
+        let keys = self.keys.lock().unwrap();
+        let wrapping_material = keys.get(wrapping_key_id).ok_or_else(|| HsmError::KeyNotFound(wrapping_key_id.to_string()))?;
+        let engine = CryptoEngine::new([0u8; 32], [0u8; 32]);
+        let op = CryptoOperation::WrapKey { key_material: key_material.to_vec() };
+        let ctx = crate::models::OperationContext::default();
+        match engine.perform(op, wrapping_material, &ctx)? {
+            KeyOperationResult::Wrapped { wrapped, .. } => Ok(wrapped),
+            _ => Err(HsmError::Crypto("Unexpected operation result".into())),
+        }
+    }
+
+    fn unwrap_key(&self, wrapping_key_id: &str, wrapped_key: &[u8]) -> HsmResult<Vec<u8>> {
+        let keys = self.keys.lock().unwrap();
+        let wrapping_material = keys.get(wrapping_key_id).ok_or_else(|| HsmError::KeyNotFound(wrapping_key_id.to_string()))?;
+        let engine = CryptoEngine::new([0u8; 32], [0u8; 32]);
+        let op = CryptoOperation::UnwrapKey { wrapped: wrapped_key.to_vec(), nonce: vec![0u8; 12] }; // Mock nonce
+        let ctx = crate::models::OperationContext::default();
+        match engine.perform(op, wrapping_material, &ctx)? {
+            KeyOperationResult::Unwrapped { key_material } => Ok(key_material),
+            _ => Err(HsmError::Crypto("Unexpected operation result".into())),
+        }
+    }
+
+    fn provider_id(&self) -> &'static str {
+        "mock-hardware"
+    }
+
+    fn supports_algorithm(&self, _algorithm: &KeyAlgorithm) -> bool {
+        true // Mock supports all algorithms
+    }
+}
 #[cfg(feature = "pqc")]
 use crate::{
     pqc::{CryptoProvider, MlDsaSecurityLevel, MlKemSecurityLevel},
@@ -605,6 +897,45 @@ impl CryptoEngine {
             )
             .map_err(HsmError::crypto)?;
         self.deserialise_material(&record.sealed.material_type, &plaintext)
+    }
+
+    /// Derive a new key using HKDF from an existing key.
+    pub fn derive_key_hkdf(
+        &self,
+        base_key: &KeyMaterial,
+        salt: &[u8],
+        info: &[u8],
+        output_length: usize,
+    ) -> HsmResult<KeyMaterial> {
+        use hkdf::Hkdf;
+        use sha2::Sha256;
+
+        let ikm = match base_key {
+            KeyMaterial::Symmetric { key } => key,
+            _ => return Err(HsmError::Crypto("HKDF requires symmetric key material".into())),
+        };
+
+        let hkdf = Hkdf::<Sha256>::new(Some(salt), ikm);
+        let mut derived = vec![0u8; output_length];
+        hkdf.expand(info, &mut derived)
+            .map_err(|_| HsmError::Crypto("HKDF expansion failed".into()))?;
+        Ok(KeyMaterial::Symmetric { key: derived })
+    }
+
+    /// Derive a key using PBKDF2.
+    pub fn derive_key_pbkdf2(
+        &self,
+        password: &[u8],
+        salt: &[u8],
+        iterations: u32,
+        output_length: usize,
+    ) -> HsmResult<KeyMaterial> {
+        use pbkdf2::pbkdf2;
+        use sha2::Sha256;
+
+        let mut derived = vec![0u8; output_length];
+        let _ = pbkdf2::<Hmac<Sha256>>(password, salt, iterations, &mut derived);
+        Ok(KeyMaterial::Symmetric { key: derived })
     }
 
     pub fn perform(
