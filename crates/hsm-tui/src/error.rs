@@ -21,6 +21,13 @@ pub enum AppError {
     Internal(String),
 }
 
+impl AppError {
+    /// Create a new internal error
+    pub fn new(_status_code: reqwest::StatusCode, msg: String) -> Self {
+        AppError::Internal(msg)
+    }
+}
+
 impl fmt::Display for AppError {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {

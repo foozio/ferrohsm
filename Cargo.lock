@@ -2632,6 +2632,7 @@ dependencies = [
  "serde_json",
  "syntect",
  "throbber-widgets-tui",
+ "time",
  "tokio",
  "toml",
  "tracing",

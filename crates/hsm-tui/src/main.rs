@@ -4,7 +4,8 @@ mod error;
 mod event;
 mod ui;
 
-use crate::api::{ApiClient, KeySummary, ApprovalResponse, PaginatedKeys, KeyListQuery, CreateKeyRequest, PaginatedAuditLogs, AuditLogQuery};
+use crate::api::{ApiClient, KeySummary, ApprovalResponse, PaginatedKeys, KeyListQuery, PaginatedAuditLogs, AuditLogQuery};
+use hsm_core::{KeyAlgorithm, KeyUsage, KeyPurpose};
 use crate::config::AppConfig;
 use crate::error::{AppError, ErrorDisplay};
 use crate::event::{EventLoop, EventResult};
@@ -15,7 +16,7 @@ use crate::ui::widgets::{ErrorDialog, LoadingSpinner};
 use anyhow::Result;
 use std::sync::Arc;
 use tokio::sync::Mutex;
-use axum::http::StatusCode;
+use reqwest::StatusCode;
 use clap::Parser;
 use crossterm::{
     event::{DisableMouseCapture, EnableMouseCapture},
@@ -104,7 +105,7 @@ struct AppState {
     crypto_result: Option<String>,
     // Key creation form
     key_create_algorithm: Option<KeyAlgorithm>,
-    key_create_usage: Vec<hsm_core::KeyPurpose>,
+    key_create_usage: KeyUsage,
     key_create_policy_input: String,
     key_create_policy_tags: Vec<String>,
     key_create_description: String,
@@ -179,7 +180,7 @@ impl AppState {
         })
     }
 
-    fn handle_char_input(&mut self, c: char) -> Result<()> {
+    async fn handle_char_input(&mut self, c: char) -> Result<()> {
         match self.mode {
             AppMode::KeysList => {
                 if c == 'n' || c == 'N' {
@@ -267,6 +268,12 @@ impl AppState {
                     self.execute_crypto_operation().await?;
                 }
             }
+            AppMode::ApprovalsList => {
+                // Char input handled in handle_char_input
+            }
+            AppMode::AuditViewer => {
+                // Char input handled in handle_char_input
+            }
             _ => {} // Ignore char input in other modes
         }
         Ok(())
@@ -283,7 +290,7 @@ impl AppState {
                     }
                     Err(e) => {
                         self.error = Some(AppError::new(
-                            axum::http::StatusCode::INTERNAL_SERVER_ERROR,
+                            StatusCode::INTERNAL_SERVER_ERROR,
                             format!("Failed to approve: {}", e),
                         ));
                     }
@@ -304,7 +311,7 @@ impl AppState {
                     }
                     Err(e) => {
                         self.error = Some(AppError::new(
-                            axum::http::StatusCode::INTERNAL_SERVER_ERROR,
+                            StatusCode::INTERNAL_SERVER_ERROR,
                             format!("Failed to deny: {}", e),
                         ));
                     }
@@ -335,7 +342,7 @@ impl AppState {
             }
             Err(e) => {
                 self.error = Some(AppError::new(
-                    axum::http::StatusCode::INTERNAL_SERVER_ERROR,
+                    StatusCode::INTERNAL_SERVER_ERROR,
                     format!("Failed to load audit logs: {}", e),
                 ));
             }
@@ -354,7 +361,7 @@ impl AppState {
             }
             Err(e) => {
                 self.error = Some(AppError::new(
-                    axum::http::StatusCode::INTERNAL_SERVER_ERROR,
+                    StatusCode::INTERNAL_SERVER_ERROR,
                     format!("Failed to load approvals: {}", e),
                 ));
             }
@@ -368,7 +375,7 @@ impl AppState {
             return Ok(());
         }
 
-        let data_b64 = base64::encode(self.crypto_data.as_bytes());
+        let data_b64 = base64::Engine::encode(&base64::engine::general_purpose::STANDARD, self.crypto_data.as_bytes());
 
         let result = match self.crypto_operation.as_deref() {
             Some("sign") => {
@@ -385,11 +392,14 @@ impl AppState {
             }
             Some("decrypt") => {
                 // Assume data is ciphertext:nonce
-                if let Some((ciphertext, nonce)) = self.crypto_data.split_once(':') {
-                    let ciphertext_b64 = base64::encode(ciphertext.as_bytes());
-                    let nonce_b64 = base64::encode(nonce.as_bytes());
+                if let Some((ciphertext_str, nonce_str)) = self.crypto_data.split_once(':') {
+                    let ciphertext_b64 = base64::Engine::encode(&base64::engine::general_purpose::STANDARD, ciphertext_str.as_bytes());
+                    let nonce_b64 = base64::Engine::encode(&base64::engine::general_purpose::STANDARD, nonce_str.as_bytes());
                     match self.api_client.decrypt(&self.crypto_key_id, ciphertext_b64, nonce_b64, None).await {
-                        Ok(resp) => format!("Plaintext: {}", String::from_utf8(base64::decode(&resp.plaintext_b64).unwrap_or_default()).unwrap_or_default()),
+                        Ok(resp) => {
+                            let decoded = base64::Engine::decode(&base64::engine::general_purpose::STANDARD, &resp.plaintext_b64).unwrap_or_default();
+                            format!("Plaintext: {}", String::from_utf8(decoded).unwrap_or_default())
+                        },
                         Err(e) => format!("Error: {}", e),
                     }
                 } else {
@@ -404,7 +414,7 @@ impl AppState {
     }
 
     async fn handle_wizard_action(&mut self, action: KeyAction) -> Result<()> {
-        match (self.mode, action) {
+        match (self.mode.clone(), action) {
             (AppMode::KeyCreateAlgorithm, KeyAction::Select) => {
                 // For now, just select AES-256-GCM as default
                 self.key_create_algorithm = Some(KeyAlgorithm::Aes256Gcm);
@@ -412,7 +422,7 @@ impl AppState {
             }
             (AppMode::KeyCreateUsage, KeyAction::Select) => {
                 // Set default usage for AES
-                self.key_create_usage = vec![hsm_core::KeyPurpose::Encrypt, hsm_core::KeyPurpose::Decrypt];
+                self.key_create_usage = vec![KeyPurpose::Encrypt, KeyPurpose::Decrypt];
                 self.mode = AppMode::KeyCreatePolicy;
             }
             (AppMode::KeyCreatePolicy, KeyAction::Select) => {
@@ -485,7 +495,7 @@ impl AppState {
             }
             Err(e) => {
                 self.error = Some(AppError::new(
-                    axum::http::StatusCode::INTERNAL_SERVER_ERROR,
+                    StatusCode::INTERNAL_SERVER_ERROR,
                     format!("Failed to load keys: {}", e),
                 ));
                 self.loading_message = None;
@@ -569,20 +579,20 @@ impl AppState {
                                 self.key_create_description = String::new();
                             }
                             2 => self.mode = AppMode::KeyOperations,
-                        3 => {
-                            self.mode = AppMode::ApprovalsList;
-                            if self.approvals.is_none() {
-                                self.loading_message = Some("Loading approvals...".to_string());
-                                self.fetch_approvals().await?;
+                            3 => {
+                                self.mode = AppMode::ApprovalsList;
+                                if self.approvals.is_none() {
+                                    self.loading_message = Some("Loading approvals...".to_string());
+                                    self.fetch_approvals().await?;
+                                }
                             }
-                        }
                             4 => {
-                            self.mode = AppMode::AuditViewer;
-                            if self.audit_logs.is_none() {
-                                self.loading_message = Some("Loading audit logs...".to_string());
-                                self.fetch_audit_logs().await?;
+                                self.mode = AppMode::AuditViewer;
+                                if self.audit_logs.is_none() {
+                                    self.loading_message = Some("Loading audit logs...".to_string());
+                                    self.fetch_audit_logs().await?;
+                                }
                             }
-                        }
                             5 => self.mode = AppMode::Settings,
                             6 => self.mode = AppMode::Help,
                             7 => self.quit = true,
@@ -596,6 +606,21 @@ impl AppState {
                                 self.mode = AppMode::KeyDetails;
                             }
                         }
+                    }
+                    AppMode::SettingsAuth => {
+                        // Save the token
+                        let token = self.auth_token_input.clone();
+                        self.api_client.set_auth_token(token.clone());
+                        self.config.auth.token = Some(token.clone());
+                        self.user_info = self.api_client.get_user_info();
+                        if let Err(e) = self.config.save() {
+                            self.error = Some(AppError::new(
+                                StatusCode::INTERNAL_SERVER_ERROR,
+                                format!("Failed to save config: {}", e),
+                            ));
+                        }
+                        self.mode = AppMode::Settings;
+                        self.auth_token_input.clear();
                     }
                     _ => {}
                 }
@@ -614,23 +639,6 @@ impl AppState {
             KeyAction::Edit => {
                 if let AppMode::Settings = self.mode {
                     self.mode = AppMode::SettingsAuth;
-                    self.auth_token_input.clear();
-                }
-            }
-            KeyAction::Select => {
-                if let AppMode::SettingsAuth = self.mode {
-                    // Save the token
-                    let token = self.auth_token_input.clone();
-                    self.api_client.set_auth_token(token.clone());
-                    self.config.auth.token = Some(token.clone());
-                    self.user_info = self.api_client.get_user_info();
-                    if let Err(e) = self.config.save() {
-                        self.error = Some(AppError::new(
-                            axum::http::StatusCode::INTERNAL_SERVER_ERROR,
-                            format!("Failed to save config: {}", e),
-                        ));
-                    }
-                    self.mode = AppMode::Settings;
                     self.auth_token_input.clear();
                 }
             }
@@ -729,7 +737,7 @@ impl App {
                         state.handle_key_action(action).await?;
                     }
                     EventResult::Char(c) => {
-                        state.handle_char_input(c)?;
+                        state.handle_char_input(c).await?;
                     }
                 }
                 state.update_help_panel();
@@ -766,37 +774,13 @@ impl App {
                      AppMode::KeysList | AppMode::KeysListSearch => {
                          self.draw_keys_list(state, f, chunks[1]);
                      }
-                     AppMode::KeyDetails => {
+                      AppMode::KeyDetails => {
                          self.draw_key_details(state, f, chunks[1]);
                      }
                     AppMode::KeyCreate | AppMode::KeyCreateAlgorithm | AppMode::KeyCreateUsage | AppMode::KeyCreatePolicy | AppMode::KeyCreateDescription | AppMode::KeyCreateConfirm => {
                         self.draw_key_create_wizard(state, f, chunks[1]);
                     }
-            AppMode::ApprovalsList => {
-                if c == 'a' || c == 'A' {
-                    self.approve_selected_approval().await?;
-                } else if c == 'd' || c == 'D' {
-                    self.deny_selected_approval().await?;
-                }
-            }
-            AppMode::AuditViewer => {
-                if c == 'n' || c == 'N' {
-                    if let Some(logs) = &self.audit_logs {
-                        if logs.has_more {
-                            self.audit_page += 1;
-                            self.loading_message = Some("Loading audit logs...".to_string());
-                            self.fetch_audit_logs().await?;
-                        }
-                    }
-                } else if c == 'p' || c == 'P' {
-                    if self.audit_page > 1 {
-                        self.audit_page -= 1;
-                        self.loading_message = Some("Loading audit logs...".to_string());
-                        self.fetch_audit_logs().await?;
-                    }
-                }
-            }
-            AppMode::KeyOperations => {
+                    AppMode::KeyOperations => {
                         self.draw_key_operations(state, f, chunks[1]);
                     }
                     AppMode::ApprovalsList => {
@@ -916,7 +900,7 @@ impl App {
                 .title(format!("Keys (Page {})", state.current_page))
                 .border_style(state.config.theme.secondary_style()),
         )
-        .highlight_style(state.config.theme.highlight_style());
+        .row_highlight_style(state.config.theme.highlight_style());
         f.render_widget(table, chunks[1]);
     }
 
@@ -975,12 +959,12 @@ impl App {
                 let mut content = "Step 2: Select Key Usage\n\n".to_string();
                 for (i, purpose) in purposes.iter().enumerate() {
                     let checked = match i {
-                        0 => state.key_create_usage.contains(&hsm_core::KeyPurpose::Encrypt),
-                        1 => state.key_create_usage.contains(&hsm_core::KeyPurpose::Decrypt),
-                        2 => state.key_create_usage.contains(&hsm_core::KeyPurpose::Sign),
-                        3 => state.key_create_usage.contains(&hsm_core::KeyPurpose::Verify),
-                        4 => state.key_create_usage.contains(&hsm_core::KeyPurpose::Wrap),
-                        5 => state.key_create_usage.contains(&hsm_core::KeyPurpose::Unwrap),
+                        0 => state.key_create_usage.contains(&KeyPurpose::Encrypt),
+                        1 => state.key_create_usage.contains(&KeyPurpose::Decrypt),
+                        2 => state.key_create_usage.contains(&KeyPurpose::Sign),
+                        3 => state.key_create_usage.contains(&KeyPurpose::Verify),
+                        4 => state.key_create_usage.contains(&KeyPurpose::Wrap),
+                        5 => state.key_create_usage.contains(&KeyPurpose::Unwrap),
                         _ => false,
                     };
                     let marker = if checked { "[✓]" } else { "[ ]" };
@@ -1157,7 +1141,7 @@ impl App {
                 .title("Approvals Management")
                 .border_style(state.config.theme.secondary_style()),
         )
-        .highlight_style(state.config.theme.highlight_style());
+        .row_highlight_style(state.config.theme.highlight_style());
         f.render_widget(table, area);
     }
 
@@ -1210,14 +1194,14 @@ impl App {
                 .title(format!("Audit Logs (Page {})", state.audit_page))
                 .border_style(state.config.theme.secondary_style()),
         )
-        .highlight_style(state.config.theme.highlight_style());
+        .row_highlight_style(state.config.theme.highlight_style());
         f.render_widget(table, area);
     }
 
     fn draw_settings(&self, state: &AppState, f: &mut Frame, area: Rect) {
         let mut content = "Settings\n\n".to_string();
 
-        content.push_str(&format!("Server Endpoint: {}\n", state.api_client.base_url));
+        content.push_str(&format!("Server Endpoint: {}\n", state.api_client.base_url()));
         content.push_str(&format!("Authenticated: {}\n", if state.api_client.is_authenticated() { "Yes" } else { "No" }));
 
         if let Some(user_info) = &state.user_info {

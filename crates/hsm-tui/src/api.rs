@@ -1,20 +1,16 @@
 //! API client for communicating with FerroHSM server
 
 use anyhow::Result;
-use base64::{Engine as _, engine::general_purpose::STANDARD as B64};
 use jsonwebtoken::{decode, Algorithm, DecodingKey, Validation};
-use reqwest::{Client, RequestBuilder, Response, StatusCode};
+use reqwest::{Client, RequestBuilder, Response};
 use serde::{Deserialize, Serialize};
 use std::time::{Duration, SystemTime, UNIX_EPOCH};
 use time::OffsetDateTime;
-use uuid::Uuid;
 
-use hsm_core::{
-    AuthContext, KeyAlgorithm, KeyMetadata, KeyState, KeyUsage, OperationContext, PendingApprovalInfo,
-};
+use hsm_core::{KeyAlgorithm, KeyState, KeyUsage};
 
 /// API client for FerroHSM server communication
-#[derive(Clone)]
+#[derive(Clone, Debug)]
 pub struct ApiClient {
     client: Client,
     base_url: String,
@@ -31,9 +27,8 @@ impl ApiClient {
         // Configure TLS
         if let Some(cert) = client_cert {
             let key = client_key.ok_or_else(|| anyhow::anyhow!("client certificate provided but no key"))?;
-            let cert = reqwest::Certificate::from_pem(cert.as_bytes())?;
-            let key = reqwest::Identity::from_pem(&format!("{}\n{}", cert.as_pem()?, key))?;
-            client_builder = client_builder.identity(key);
+            let identity = reqwest::Identity::from_pem(&format!("{}\n{}", cert, key).into_bytes())?;
+            client_builder = client_builder.identity(identity);
         }
 
         if let Some(ca) = ca_bundle {
@@ -48,6 +43,11 @@ impl ApiClient {
             base_url: base_url.trim_end_matches('/').to_string(),
             auth_token: None,
         })
+    }
+
+    /// Get the base URL
+    pub fn base_url(&self) -> &str {
+        &self.base_url
     }
 
     /// Set the authentication token
@@ -72,7 +72,7 @@ impl ApiClient {
             if let Ok(token_data) = decode::<serde_json::Value>(
                 token,
                 &DecodingKey::from_secret(&[]), // Empty key for unverified decode
-                &Validation::new(Algorithm::HS256).insecure_disable_signature_validation(),
+                &Validation::new(Algorithm::HS256),
             ) {
                 if let Some(exp) = token_data.claims.get("exp").and_then(|v| v.as_u64()) {
                     let now = SystemTime::now().duration_since(UNIX_EPOCH).unwrap().as_secs();
@@ -89,7 +89,7 @@ impl ApiClient {
             if let Ok(token_data) = decode::<serde_json::Value>(
                 token,
                 &DecodingKey::from_secret(&[]),
-                &Validation::new(Algorithm::HS256).insecure_disable_signature_validation(),
+                &Validation::new(Algorithm::HS256),
             ) {
                 let claims = token_data.claims;
                 let sub = claims.get("sub").and_then(|v| v.as_str()).unwrap_or("").to_string();

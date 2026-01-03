@@ -176,6 +176,13 @@ impl Theme {
             .fg(self.text.clone().into())
             .bg(self.secondary.clone().into())
     }
+
+    /// Get style for highlighted elements (e.g. selected list items)
+    pub fn highlight_style(&self) -> Style {
+        Style::default()
+            .fg(self.background.clone().into())
+            .bg(self.primary.clone().into())
+    }
 }
 
 /// Dark theme preset
