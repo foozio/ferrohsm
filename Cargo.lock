@@ -2623,6 +2623,7 @@ dependencies = [
  "directories",
  "escargot",
  "hsm-core",
+ "jsonwebtoken",
  "predicates",
  "ratatui 0.30.0-beta.0",
  "reqwest",
