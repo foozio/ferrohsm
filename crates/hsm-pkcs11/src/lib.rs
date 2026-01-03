@@ -518,8 +518,6 @@ pub fn encrypt(
             ));
         }
     }
-        }
-    }
 
     Ok(())
 }
@@ -686,8 +684,6 @@ pub fn decrypt(
             return Err(FrontendError::Internal(
                 "Unexpected result type".to_string(),
             ));
-        }
-    }
         }
     }
 
@@ -1640,238 +1636,6 @@ pub extern "C" fn C_Decrypt(
     }
 }
 #[unsafe(no_mangle)]
-pub extern "C" fn C_GenerateKey(
-    h_session: CK_SESSION_HANDLE,
-    p_mechanism: *mut cryptoki_sys::CK_MECHANISM,
-    p_template: cryptoki_sys::CK_ATTRIBUTE_PTR,
-    ul_count: CK_ULONG,
-    ph_key: *mut CK_OBJECT_HANDLE,
-) -> CK_RV {
-    if p_mechanism.is_null() || ph_key.is_null() {
-        return CKR_ARGUMENTS_BAD;
-    }
-
-    // Convert mechanism
-    let mechanism = unsafe { &*p_mechanism };
-
-    // Convert template to bytes (simplified for now)
-    let template_bytes = if p_template.is_null() {
-        Vec::new()
-    } else {
-        unsafe {
-            std::slice::from_raw_parts(p_template as *const u8, (ul_count * std::mem::size_of::<cryptoki_sys::CK_ATTRIBUTE>() as CK_ULONG) as usize).to_vec()
-        }
-    };
-
-    match generate_key(h_session, mechanism, &template_bytes, ul_count) {
-        Ok(object_handle) => {
-            unsafe {
-                *ph_key = object_handle;
-            }
-            CKR_OK
-        }
-        Err(FrontendError::NotInitialized) => CKR_CRYPTOKI_NOT_INITIALIZED,
-        Err(err) => {
-            if let FrontendError::Internal(ref msg) = err {
-                error!("pkcs11 generate_key internal error: {msg}");
-            }
-            translate_error(err)
-        }
-    }
-}
-
-#[unsafe(no_mangle)]
-#[allow(clippy::not_unsafe_ptr_arg_deref)]
-pub extern "C" fn C_SignInit(
-    h_session: CK_SESSION_HANDLE,
-    p_mechanism: *mut cryptoki_sys::CK_MECHANISM,
-    h_key: CK_OBJECT_HANDLE,
-) -> CK_RV {
-    if p_mechanism.is_null() {
-        return CKR_ARGUMENTS_BAD;
-    }
-
-    match sign_init(h_session, p_mechanism, h_key) {
-        Ok(()) => CKR_OK,
-        Err(FrontendError::NotInitialized) => CKR_CRYPTOKI_NOT_INITIALIZED,
-        Err(err) => {
-            if let FrontendError::Internal(ref msg) = err {
-                error!("pkcs11 sign_init internal error: {msg}");
-            }
-            translate_error(err)
-        }
-    }
-}
-
-#[unsafe(no_mangle)]
-#[allow(clippy::not_unsafe_ptr_arg_deref)]
-pub extern "C" fn C_Sign(
-    h_session: CK_SESSION_HANDLE,
-    p_data: CK_BYTE_PTR,
-    ul_data_len: CK_ULONG,
-    p_signature: CK_BYTE_PTR,
-    pul_signature_len: CK_ULONG_PTR,
-) -> CK_RV {
-    if p_data.is_null() || pul_signature_len.is_null() {
-        return CKR_ARGUMENTS_BAD;
-    }
-
-    match sign(h_session, p_data, ul_data_len, p_signature, pul_signature_len) {
-        Ok(()) => CKR_OK,
-        Err(FrontendError::NotInitialized) => CKR_CRYPTOKI_NOT_INITIALIZED,
-        Err(err) => {
-            if let FrontendError::Internal(ref msg) = err {
-                error!("pkcs11 sign internal error: {msg}");
-            }
-            translate_error(err)
-        }
-    }
-}
-
-#[unsafe(no_mangle)]
-#[allow(clippy::not_unsafe_ptr_arg_deref)]
-pub extern "C" fn C_VerifyInit(
-    h_session: CK_SESSION_HANDLE,
-    p_mechanism: *mut cryptoki_sys::CK_MECHANISM,
-    h_key: CK_OBJECT_HANDLE,
-) -> CK_RV {
-    if p_mechanism.is_null() {
-        return CKR_ARGUMENTS_BAD;
-    }
-
-    match verify_init(h_session, p_mechanism, h_key) {
-        Ok(()) => CKR_OK,
-        Err(FrontendError::NotInitialized) => CKR_CRYPTOKI_NOT_INITIALIZED,
-        Err(err) => {
-            if let FrontendError::Internal(ref msg) = err {
-                error!("pkcs11 verify_init internal error: {msg}");
-            }
-            translate_error(err)
-        }
-    }
-}
-
-#[unsafe(no_mangle)]
-#[allow(clippy::not_unsafe_ptr_arg_deref)]
-pub extern "C" fn C_Verify(
-    h_session: CK_SESSION_HANDLE,
-    p_data: CK_BYTE_PTR,
-    ul_data_len: CK_ULONG,
-    p_signature: CK_BYTE_PTR,
-    ul_signature_len: CK_ULONG,
-) -> CK_RV {
-    if p_data.is_null() || p_signature.is_null() {
-        return CKR_ARGUMENTS_BAD;
-    }
-
-    match verify(h_session, p_data, ul_data_len, p_signature, ul_signature_len) {
-        Ok(()) => CKR_OK,
-        Err(FrontendError::NotInitialized) => CKR_CRYPTOKI_NOT_INITIALIZED,
-        Err(err) => {
-            if let FrontendError::Internal(ref msg) = err {
-                error!("pkcs11 verify internal error: {msg}");
-            }
-            translate_error(err)
-        }
-    }
-}
-
-#[unsafe(no_mangle)]
-#[allow(clippy::not_unsafe_ptr_arg_deref)]
-pub extern "C" fn C_EncryptInit(
-    h_session: CK_SESSION_HANDLE,
-    p_mechanism: *mut cryptoki_sys::CK_MECHANISM,
-    h_key: CK_OBJECT_HANDLE,
-) -> CK_RV {
-    if p_mechanism.is_null() {
-        return CKR_ARGUMENTS_BAD;
-    }
-
-    match encrypt_init(h_session, p_mechanism, h_key) {
-        Ok(()) => CKR_OK,
-        Err(FrontendError::NotInitialized) => CKR_CRYPTOKI_NOT_INITIALIZED,
-        Err(err) => {
-            if let FrontendError::Internal(ref msg) = err {
-                error!("pkcs11 encrypt_init internal error: {msg}");
-            }
-            translate_error(err)
-        }
-    }
-}
-
-#[unsafe(no_mangle)]
-#[allow(clippy::not_unsafe_ptr_arg_deref)]
-pub extern "C" fn C_Encrypt(
-    h_session: CK_SESSION_HANDLE,
-    p_data: CK_BYTE_PTR,
-    ul_data_len: CK_ULONG,
-    p_encrypted_data: CK_BYTE_PTR,
-    pul_encrypted_data_len: CK_ULONG_PTR,
-) -> CK_RV {
-    if p_data.is_null() || pul_encrypted_data_len.is_null() {
-        return CKR_ARGUMENTS_BAD;
-    }
-
-    match encrypt(h_session, p_data, ul_data_len, p_encrypted_data, pul_encrypted_data_len) {
-        Ok(()) => CKR_OK,
-        Err(FrontendError::NotInitialized) => CKR_CRYPTOKI_NOT_INITIALIZED,
-        Err(err) => {
-            if let FrontendError::Internal(ref msg) = err {
-                error!("pkcs11 encrypt internal error: {msg}");
-            }
-            translate_error(err)
-        }
-    }
-}
-
-#[unsafe(no_mangle)]
-#[allow(clippy::not_unsafe_ptr_arg_deref)]
-pub extern "C" fn C_DecryptInit(
-    h_session: CK_SESSION_HANDLE,
-    p_mechanism: *mut cryptoki_sys::CK_MECHANISM,
-    h_key: CK_OBJECT_HANDLE,
-) -> CK_RV {
-    if p_mechanism.is_null() {
-        return CKR_ARGUMENTS_BAD;
-    }
-
-    match decrypt_init(h_session, p_mechanism, h_key) {
-        Ok(()) => CKR_OK,
-        Err(FrontendError::NotInitialized) => CKR_CRYPTOKI_NOT_INITIALIZED,
-        Err(err) => {
-            if let FrontendError::Internal(ref msg) = err {
-                error!("pkcs11 decrypt_init internal error: {msg}");
-            }
-            translate_error(err)
-        }
-    }
-}
-
-#[unsafe(no_mangle)]
-#[allow(clippy::not_unsafe_ptr_arg_deref)]
-pub extern "C" fn C_Decrypt(
-    h_session: CK_SESSION_HANDLE,
-    p_encrypted_data: CK_BYTE_PTR,
-    ul_encrypted_data_len: CK_ULONG,
-    p_data: CK_BYTE_PTR,
-    pul_data_len: CK_ULONG_PTR,
-) -> CK_RV {
-    if p_encrypted_data.is_null() || pul_data_len.is_null() {
-        return CKR_ARGUMENTS_BAD;
-    }
-
-    match decrypt(h_session, p_encrypted_data, ul_encrypted_data_len, p_data, pul_data_len) {
-        Ok(()) => CKR_OK,
-        Err(FrontendError::NotInitialized) => CKR_CRYPTOKI_NOT_INITIALIZED,
-        Err(err) => {
-            if let FrontendError::Internal(ref msg) = err {
-                error!("pkcs11 decrypt internal error: {msg}");
-            }
-            translate_error(err)
-        }
-    }
-}
-#[unsafe(no_mangle)]
 #[allow(clippy::not_unsafe_ptr_arg_deref)]
 pub extern "C" fn C_GetAttributeValue(
     h_session: CK_SESSION_HANDLE,
@@ -2208,8 +1972,6 @@ pub extern "C" fn C_DestroyObject(
             translate_error(err)
         }
     }
-
-    Ok(())
 }
 
 /// Initialize a search for objects

@@ -337,8 +337,6 @@ fn key_algorithm_to_ulong(algorithm: KeyAlgorithm) -> CK_ULONG {
         KeyAlgorithm::HybridP384MlDsa87 => 50 + 87,
     }
 }
-    }
-}
 
 /// Get the value of a specific attribute for a key
 pub fn get_attribute_value(

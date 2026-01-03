@@ -783,13 +783,13 @@ async fn main() -> anyhow::Result<()> {
     if let AuditView::File(file_audit_log) = audit_view.clone() {
         let checkpoint_scheduler =
             CheckpointScheduler::new(Arc::clone(&file_audit_log), checkpoint_interval);
-        tokio::spawn(async move { checkpoint_scheduler.run().await });
+        checkpoint_scheduler.run();
 
         // Spawn key rotation scheduler
         let key_rotation_interval = Duration::from_secs(args.key_rotation_interval_secs.max(60));
         let key_rotation_scheduler =
             KeyRotationScheduler::new(file_audit_log, key_rotation_interval);
-        tokio::spawn(async move { key_rotation_scheduler.run().await });
+        key_rotation_scheduler.run();
     }
 
     let audit_interval = Duration::from_secs(args.audit_retention_interval_secs.max(60));
@@ -1640,6 +1640,7 @@ impl From<PendingApprovalInfo> for ApprovalResponse {
             created_at,
             approved_by,
             approved_at,
+            ..
         } = value;
 
         let created_at = created_at
