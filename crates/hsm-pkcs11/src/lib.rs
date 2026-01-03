@@ -508,11 +508,7 @@ pub fn encrypt(
                     *encrypted_data_len = output.len() as CK_ULONG;
                     return Err(FrontendError::Internal("Buffer too small".to_string()));
                 }
-                std::ptr::copy_nonoverlapping(
-                    output.as_ptr(),
-                    encrypted_data,
-                    output.len(),
-                );
+                std::ptr::copy_nonoverlapping(output.as_ptr(), encrypted_data, output.len());
                 *encrypted_data_len = output.len() as CK_ULONG;
             }
         },
@@ -650,13 +646,15 @@ pub fn decrypt(
     // Perform operation
     let full_ciphertext =
         unsafe { std::slice::from_raw_parts(encrypted_data, encrypted_data_len as usize).to_vec() };
-    
+
     // Extract nonce (first 12 bytes)
     let (nonce, ciphertext) = if full_ciphertext.len() >= 12 {
         let (n, c) = full_ciphertext.split_at(12);
         (n.to_vec(), c.to_vec())
     } else {
-        return Err(FrontendError::Internal("Data too short for nonce".to_string()));
+        return Err(FrontendError::Internal(
+            "Data too short for nonce".to_string(),
+        ));
     };
 
     let op = CryptoOperation::Decrypt {
@@ -1402,12 +1400,7 @@ pub extern "C" fn C_GenerateKey(
     let template = if p_template.is_null() {
         &[]
     } else {
-        unsafe {
-            std::slice::from_raw_parts(
-                p_template,
-                ul_count as usize,
-            )
-        }
+        unsafe { std::slice::from_raw_parts(p_template, ul_count as usize) }
     };
 
     match generate_key(h_session, mechanism, template) {
@@ -2000,7 +1993,7 @@ pub fn find_objects_init(
         let session = context.sessions.get(&session_handle).ok_or_else(|| {
             FrontendError::Internal(format!("Session {} not found", session_handle))
         })?;
-        
+
         // Check login state if searching for private objects
         // For simplicity, we assume we can always search, but we might filter results later
         session.slot_id
@@ -2068,7 +2061,7 @@ pub fn find_objects(
     _session_handle: CK_SESSION_HANDLE,
 ) -> Result<Vec<CK_OBJECT_HANDLE>, FrontendError> {
     // This function is effectively replaced by find_objects_chunk used in C_FindObjects
-    // But we keep it as a placeholder or remove it. 
+    // But we keep it as a placeholder or remove it.
     // Since it was part of the original API structure (maybe?), I'll leave it returning empty
     // but fix the type error.
     Ok(Vec::new())
@@ -2105,7 +2098,7 @@ pub fn find_objects_chunk(
             break;
         }
     }
-    
+
     Ok(results)
 }
 
@@ -2137,12 +2130,7 @@ pub extern "C" fn C_FindObjectsInit(
     let template = if p_template.is_null() {
         &[]
     } else {
-        unsafe {
-            std::slice::from_raw_parts(
-                p_template,
-                ul_count as usize,
-            )
-        }
+        unsafe { std::slice::from_raw_parts(p_template, ul_count as usize) }
     };
 
     match find_objects_init(h_session, template) {
@@ -2171,11 +2159,7 @@ pub extern "C" fn C_FindObjects(
     match find_objects_chunk(h_session, ul_max_object_count as usize) {
         Ok(handles) => {
             unsafe {
-                std::ptr::copy_nonoverlapping(
-                    handles.as_ptr(),
-                    ph_object,
-                    handles.len(),
-                );
+                std::ptr::copy_nonoverlapping(handles.as_ptr(), ph_object, handles.len());
                 *pul_object_count = handles.len() as CK_ULONG;
             }
             CKR_OK
@@ -2639,7 +2623,7 @@ mod tests {
         // But CryptoEngine::Sign expects RSA/EC/PQC.
         //
         // Let's use AES for Encrypt/Decrypt first as it is simpler with C_GenerateKey (Symmetric).
-        
+
         // Generate AES Key
         let mut key_handle = 0;
         let mut mechanism = cryptoki_sys::CK_MECHANISM {
@@ -2692,14 +2676,14 @@ mod tests {
             &mut ciphertext_len,
         );
         assert_eq!(rv, CKR_OK);
-        
+
         // Decrypt
         let rv = C_DecryptInit(session_handle, &mut mech_aes_gcm, key_handle);
         assert_eq!(rv, CKR_OK);
-        
+
         let mut decrypted = vec![0u8; 100];
         let mut decrypted_len = decrypted.len() as CK_ULONG;
-        
+
         let rv = C_Decrypt(
             session_handle,
             ciphertext.as_mut_ptr(),

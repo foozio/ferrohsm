@@ -6,7 +6,6 @@ use aes_gcm::{
 };
 use hmac::{Hmac, Mac};
 
-
 use aws_lc_rs::{
     encoding::AsDer,
     rsa,
