@@ -5,7 +5,7 @@
 - [x] **Task: Setup basic Axum routes and static file serving** e8d233d
   - Write tests for static file serving in `hsm-server`.
   - Implement Axum routes to serve `web/templates/dashboard.html` and `web/static/styles.css`.
-- [~] **Task: Implement HSM Status API endpoint**
+- [x] **Task: Implement HSM Status API endpoint** d7e3e71
   - Write tests for the status endpoint.
   - Implement `/api/v1/status` in `hsm-server` returning system health and version.
 - [ ] **Task: Implement Active Keys API endpoint**
