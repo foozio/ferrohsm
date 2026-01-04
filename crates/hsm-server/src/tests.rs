@@ -256,4 +256,24 @@ mod tests {
         
         assert!(body.is_array());
     }
+
+    #[tokio::test]
+    async fn test_dashboard_js_serving() {
+        let (app, _tmp) = setup_test_app().await;
+
+        let response = app
+            .oneshot(
+                Request::builder()
+                    .uri("/static/dashboard.js")
+                    .body(Body::empty())
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+
+        assert_eq!(response.status(), StatusCode::OK);
+        assert!(
+            response.headers().get("content-type").unwrap().to_str().unwrap().contains("javascript")
+        );
+    }
 }
