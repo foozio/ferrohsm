@@ -22,7 +22,7 @@
   - Implement the basic HTML layout in `web/templates/dashboard.html` using the existing `layout.html`.
 - [x] **Task: Implement Status visualization** d4321ad
   - Write JS to fetch `/api/v1/status` and update the UI with system health.
-- [~] **Task: Implement Keys table**
+- [x] **Task: Implement Keys table** afb96d0
   - Write JS to fetch `/api/v1/keys` and render the list of keys in a table.
 - [ ] **Task: Implement Audit log feed**
   - Write JS to fetch `/api/v1/audit/recent` and display the audit trail.
