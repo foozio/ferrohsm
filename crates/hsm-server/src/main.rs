@@ -263,6 +263,7 @@ pub(crate) fn create_router<P: PolicyEngine + 'static>(
 ) -> Router {
     let router = Router::new()
         .route("/healthz", get(health))
+        .route("/api/v1/status", get(health_v1))
         .route("/metrics", get(metrics_endpoint))
         .route("/.well-known/jwks.json", get(jwks_endpoint))
         .route("/api/v1/keys", get(list_keys).post(create_key))
@@ -950,6 +951,7 @@ async fn shutdown_signal() {
 #[derive(Debug, Serialize)]
 struct HealthResponse {
     status: &'static str,
+    version: &'static str,
     uptime_seconds: u64,
     cache_entries: usize,
     rate_limit_per_second: u64,
@@ -978,12 +980,19 @@ async fn health<P: PolicyEngine>(
 
     Ok(Json(HealthResponse {
         status: if storage_healthy { "ok" } else { "degraded" },
+        version: env!("CARGO_PKG_VERSION"),
         uptime_seconds,
         cache_entries: state.key_cache.len(),
         rate_limit_per_second: stats.per_second,
         rate_limit_burst: stats.burst,
         active_rate_limiters: stats.active_buckets,
     }))
+}
+
+async fn health_v1<P: PolicyEngine>(
+    state: State<AppState<P>>,
+) -> Result<Json<HealthResponse>, AppError> {
+    health(state).await
 }
 
 async fn metrics_endpoint<P: PolicyEngine>(

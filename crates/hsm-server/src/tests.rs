@@ -132,4 +132,26 @@ mod tests {
             panic!("Request failed with status {} and body: {:?}", status, String::from_utf8_lossy(&body_bytes));
         }
     }
+
+    #[tokio::test]
+    async fn test_hsm_status_api() {
+        let (app, _tmp) = setup_test_app().await;
+
+        let response = app
+            .oneshot(
+                Request::builder()
+                    .uri("/api/v1/status")
+                    .body(Body::empty())
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+
+        assert_eq!(response.status(), StatusCode::OK);
+        let body_bytes = axum::body::to_bytes(response.into_body(), 10000).await.unwrap();
+        let body: serde_json::Value = serde_json::from_slice(&body_bytes).unwrap();
+        
+        assert_eq!(body["status"], "ok");
+        assert!(body.get("version").is_some());
+    }
 }
