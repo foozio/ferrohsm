@@ -1,10 +1,48 @@
 document.addEventListener('DOMContentLoaded', () => {
     fetchSystemStatus();
     fetchKeys();
+    fetchAuditLogs();
     // Refresh status and keys periodically
     setInterval(fetchSystemStatus, 30000);
     setInterval(fetchKeys, 60000);
+    setInterval(fetchAuditLogs, 60000);
 });
+
+async function fetchAuditLogs() {
+    const tableBody = document.getElementById('audit-table-body');
+    if (!tableBody) return;
+
+    try {
+        const response = await fetch('/api/v1/audit/recent');
+        if (!response.ok) {
+            if (response.status === 403) {
+                tableBody.innerHTML = '<tr><td colspan="6" class="empty">Access denied to audit logs</td></tr>';
+                return;
+            }
+            throw new Error('Audit API unreachable');
+        }
+        
+        const events = await response.json();
+        
+        if (events.length === 0) {
+            tableBody.innerHTML = '<tr><td colspan="6" class="empty">No recent audit events</td></tr>';
+            return;
+        }
+
+        tableBody.innerHTML = events.map(event => `
+            <tr>
+                <td>${escapeHtml(event.timestamp)}</td>
+                <td>${escapeHtml(event.actor_id)}</td>
+                <td>${escapeHtml(event.action)}</td>
+                <td>${escapeHtml(event.key_id || '-')}</td>
+                <td>${escapeHtml(event.message)}</td>
+                <td><span class="audit-hash">${escapeHtml(event.hash)}</span></td>
+            </tr>
+        `).join('');
+    } catch (error) {
+        console.error('Failed to fetch audit logs:', error);
+    }
+}
 
 async function fetchKeys() {
     const tableBody = document.getElementById('keys-table-body');
