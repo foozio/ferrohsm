@@ -20,7 +20,7 @@
 
 - [x] **Task: Create dashboard HTML structure** bd10c86
   - Implement the basic HTML layout in `web/templates/dashboard.html` using the existing `layout.html`.
-- [~] **Task: Implement Status visualization**
+- [x] **Task: Implement Status visualization** d4321ad
   - Write JS to fetch `/api/v1/status` and update the UI with system health.
 - [ ] **Task: Implement Keys table**
   - Write JS to fetch `/api/v1/keys` and render the list of keys in a table.
