@@ -8,7 +8,7 @@
 - [x] **Task: Implement HSM Status API endpoint** d7e3e71
   - Write tests for the status endpoint.
   - Implement `/api/v1/status` in `hsm-server` returning system health and version.
-- [ ] **Task: Implement Active Keys API endpoint**
+- [~] **Task: Implement Active Keys API endpoint**
   - Write tests for the keys listing endpoint.
   - Implement `/api/v1/keys` in `hsm-server` to return metadata for active keys.
 - [ ] **Task: Implement Recent Audit Logs API endpoint**
