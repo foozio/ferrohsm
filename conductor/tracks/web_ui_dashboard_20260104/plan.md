@@ -16,7 +16,7 @@
   - Implement `/api/v1/audit/recent` in `hsm-server` to return the last 50 audit entries.
 - [x] **Task: Conductor - User Manual Verification 'Foundation and Backend API' (Protocol in workflow.md)**
 
-## Phase 2: Frontend Dashboard Implementation
+## Phase 2: Frontend Dashboard Implementation [checkpoint: f41f337]
 
 - [x] **Task: Create dashboard HTML structure** bd10c86
   - Implement the basic HTML layout in `web/templates/dashboard.html` using the existing `layout.html`.
@@ -26,7 +26,7 @@
   - Write JS to fetch `/api/v1/keys` and render the list of keys in a table.
 - [x] **Task: Implement Audit log feed** 9fc4cbd
   - Write JS to fetch `/api/v1/audit/recent` and display the audit trail.
-- [ ] **Task: Conductor - User Manual Verification 'Frontend Dashboard Implementation' (Protocol in workflow.md)**
+- [x] **Task: Conductor - User Manual Verification 'Frontend Dashboard Implementation' (Protocol in workflow.md)**
 
 ## Phase 3: Integration and Refinement
 
