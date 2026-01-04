@@ -11,7 +11,7 @@
 - [x] **Task: Implement Active Keys API endpoint** 95627d7
   - Write tests for the keys listing endpoint.
   - Implement `/api/v1/keys` in `hsm-server` to return metadata for active keys.
-- [~] **Task: Implement Recent Audit Logs API endpoint**
+- [x] **Task: Implement Recent Audit Logs API endpoint** c3e94e3
   - Write tests for the audit log endpoint.
   - Implement `/api/v1/audit/recent` in `hsm-server` to return the last 50 audit entries.
 - [ ] **Task: Conductor - User Manual Verification 'Foundation and Backend API' (Protocol in workflow.md)**
