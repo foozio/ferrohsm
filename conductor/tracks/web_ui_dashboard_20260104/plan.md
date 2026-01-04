@@ -24,7 +24,7 @@
   - Write JS to fetch `/api/v1/status` and update the UI with system health.
 - [x] **Task: Implement Keys table** afb96d0
   - Write JS to fetch `/api/v1/keys` and render the list of keys in a table.
-- [~] **Task: Implement Audit log feed**
+- [x] **Task: Implement Audit log feed** 9fc4cbd
   - Write JS to fetch `/api/v1/audit/recent` and display the audit trail.
 - [ ] **Task: Conductor - User Manual Verification 'Frontend Dashboard Implementation' (Protocol in workflow.md)**
 
