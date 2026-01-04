@@ -1,6 +1,6 @@
 # Plan: Web UI Dashboard
 
-## Phase 1: Foundation and Backend API
+## Phase 1: Foundation and Backend API [checkpoint: eae586b]
 
 - [x] **Task: Setup basic Axum routes and static file serving** e8d233d
   - Write tests for static file serving in `hsm-server`.
@@ -14,7 +14,7 @@
 - [x] **Task: Implement Recent Audit Logs API endpoint** c3e94e3
   - Write tests for the audit log endpoint.
   - Implement `/api/v1/audit/recent` in `hsm-server` to return the last 50 audit entries.
-- [ ] **Task: Conductor - User Manual Verification 'Foundation and Backend API' (Protocol in workflow.md)**
+- [x] **Task: Conductor - User Manual Verification 'Foundation and Backend API' (Protocol in workflow.md)**
 
 ## Phase 2: Frontend Dashboard Implementation
 
