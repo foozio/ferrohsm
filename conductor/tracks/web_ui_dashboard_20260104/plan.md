@@ -2,7 +2,7 @@
 
 ## Phase 1: Foundation and Backend API
 
-- [ ] **Task: Setup basic Axum routes and static file serving**
+- [~] **Task: Setup basic Axum routes and static file serving**
   - Write tests for static file serving in `hsm-server`.
   - Implement Axum routes to serve `web/templates/dashboard.html` and `web/static/styles.css`.
 - [ ] **Task: Implement HSM Status API endpoint**

@@ -4,5 +4,5 @@ This file tracks all major tracks for the project. Each track has its own detail
 
 ---
 
-## [ ] Track: Implement the initial Web UI dashboard to visualize HSM status, active keys, and recent audit logs.
+## [~] Track: Implement the initial Web UI dashboard to visualize HSM status, active keys, and recent audit logs.
 *Link: [./conductor/tracks/web_ui_dashboard_20260104/](./conductor/tracks/web_ui_dashboard_20260104/)*

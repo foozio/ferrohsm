@@ -3,6 +3,9 @@ mod pqc;
 mod retention;
 mod tls;
 
+#[cfg(test)]
+mod tests;
+
 use std::{
     collections::{HashMap, HashSet, VecDeque},
     net::{IpAddr, SocketAddr},
@@ -213,6 +216,10 @@ struct Args {
     /// Interval in seconds between audit signing key rotation checks.
     #[arg(long, default_value_t = 86400)]
     key_rotation_interval_secs: u64,
+
+    /// Directory for web templates and static assets.
+    #[arg(long, default_value = "web")]
+    web_dir: PathBuf,
 }
 
 #[derive(Clone, Debug, ValueEnum)]
@@ -239,7 +246,7 @@ enum ApprovalStoreBackend {
     Sqlite,
 }
 
-struct AppState<P: PolicyEngine + 'static> {
+pub(crate) struct AppState<P: PolicyEngine + 'static> {
     manager: Arc<KeyManager<dyn KeyStore, dyn AuditLog, P>>,
     templates: Arc<Tera>,
     auth: Arc<AuthVerifier>,
@@ -248,6 +255,38 @@ struct AppState<P: PolicyEngine + 'static> {
     audit_view: AuditView,
     metrics_handle: PrometheusHandle,
     startup: Instant,
+}
+
+pub(crate) fn create_router<P: PolicyEngine + 'static>(
+    state: AppState<P>,
+    static_dir: PathBuf,
+) -> Router {
+    let router = Router::new()
+        .route("/healthz", get(health))
+        .route("/metrics", get(metrics_endpoint))
+        .route("/.well-known/jwks.json", get(jwks_endpoint))
+        .route("/api/v1/keys", get(list_keys).post(create_key))
+        .route("/api/v1/keys/:id", get(describe_key))
+        .route("/api/v1/keys/:id/rotate", post(rotate_key))
+        .route("/api/v1/keys/:id/versions", get(list_key_versions))
+        .route("/api/v1/keys/:id/rollback", post(rollback_key))
+        .route("/api/v1/keys/:id/sign", post(sign_payload))
+        .route("/api/v1/keys/:id/encrypt", post(encrypt_payload))
+        .route("/api/v1/keys/:id/decrypt", post(decrypt_payload))
+        .route("/api/v1/approvals", get(list_approvals))
+        .route(
+            "/api/v1/approvals/:id/approve",
+            post(approve_pending_action),
+        )
+        .route("/api/v1/approvals/:id/deny", post(deny_pending_action))
+        .route("/ui", get(render_dashboard))
+        .route("/ui/approvals/:id/approve", post(approve_approval_ui))
+        .route("/ui/approvals/:id/deny", post(deny_approval_ui))
+        .nest_service("/static", ServeDir::new(static_dir));
+
+    pqc::register_routes(router)
+        .with_state(state)
+        .layer(TraceLayer::new_for_http())
 }
 
 impl<P: PolicyEngine + 'static> Clone for AppState<P> {
@@ -694,6 +733,9 @@ async fn main() -> anyhow::Result<()> {
     let master_key = decode_or_error(args.master_key.as_deref(), "master")?;
     let hmac_key = decode_or_error(args.hmac_key.as_deref(), "hmac")?;
 
+    let static_dir = args.web_dir.join("static");
+    let template_pattern = args.web_dir.join("templates/**/*");
+
     let storage: Arc<dyn KeyStore> = match args.key_store {
         StoreBackend::Filesystem => Arc::new(FileKeyStore::new(&args.key_dir)?),
         StoreBackend::Sqlite => Arc::new(SqliteKeyStore::new(&args.sqlite_path)?),
@@ -741,7 +783,9 @@ async fn main() -> anyhow::Result<()> {
         hmac_key,
     ));
     let retention_ledger = Arc::new(RetentionLedger::new(&args.retention_ledger)?);
-    let templates = Arc::new(load_templates("web/templates/**/*")?);
+    let templates = Arc::new(load_templates(template_pattern.to_str().ok_or_else(|| {
+        anyhow::anyhow!("invalid web_dir path")
+    })?)?);
     let auth = if let Some(config_path) = args.auth_jwt_config.clone() {
         AuthVerifier::from_config_file(config_path, Duration::from_secs(args.auth_jwt_reload_secs))?
     } else if let Some(secret) = args.auth_jwt_secret.as_deref() {
@@ -838,32 +882,7 @@ async fn main() -> anyhow::Result<()> {
         });
     }
 
-    let router = Router::new()
-        .route("/healthz", get(health))
-        .route("/metrics", get(metrics_endpoint))
-        .route("/.well-known/jwks.json", get(jwks_endpoint))
-        .route("/api/v1/keys", get(list_keys).post(create_key))
-        .route("/api/v1/keys/:id", get(describe_key))
-        .route("/api/v1/keys/:id/rotate", post(rotate_key))
-        .route("/api/v1/keys/:id/versions", get(list_key_versions))
-        .route("/api/v1/keys/:id/rollback", post(rollback_key))
-        .route("/api/v1/keys/:id/sign", post(sign_payload))
-        .route("/api/v1/keys/:id/encrypt", post(encrypt_payload))
-        .route("/api/v1/keys/:id/decrypt", post(decrypt_payload))
-        .route("/api/v1/approvals", get(list_approvals))
-        .route(
-            "/api/v1/approvals/:id/approve",
-            post(approve_pending_action),
-        )
-        .route("/api/v1/approvals/:id/deny", post(deny_pending_action))
-        .route("/ui", get(render_dashboard))
-        .route("/ui/approvals/:id/approve", post(approve_approval_ui))
-        .route("/ui/approvals/:id/deny", post(deny_approval_ui))
-        .nest_service("/static", ServeDir::new("web/static"));
-
-    let app = pqc::register_routes(router)
-        .with_state(state.clone())
-        .layer(TraceLayer::new_for_http());
+    let app = create_router(state.clone(), static_dir);
 
     let tls_setup = crate::tls::configure(&args).await?;
     let server_handle = axum_server::Handle::new();
