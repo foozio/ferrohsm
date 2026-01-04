@@ -1,4 +1,9 @@
 document.addEventListener('DOMContentLoaded', () => {
+    // Initial loading indicators
+    document.getElementById('keys-table-body').innerHTML = '<tr><td colspan="5" class="empty">Loading keys...</td></tr>';
+    const auditBody = document.getElementById('audit-table-body');
+    if (auditBody) auditBody.innerHTML = '<tr><td colspan="6" class="empty">Loading audit logs...</td></tr>';
+
     fetchSystemStatus();
     fetchKeys();
     fetchAuditLogs();
@@ -31,16 +36,17 @@ async function fetchAuditLogs() {
 
         tableBody.innerHTML = events.map(event => `
             <tr>
-                <td>${escapeHtml(event.timestamp)}</td>
+                <td>${escapeHtml(formatDate(event.timestamp))}</td>
                 <td>${escapeHtml(event.actor_id)}</td>
                 <td>${escapeHtml(event.action)}</td>
                 <td>${escapeHtml(event.key_id || '-')}</td>
                 <td>${escapeHtml(event.message)}</td>
-                <td><span class="audit-hash">${escapeHtml(event.hash)}</span></td>
+                <td><span class="audit-hash" title="${escapeHtml(event.hash)}">${escapeHtml(event.hash.substring(0, 12))}...</span></td>
             </tr>
         `).join('');
     } catch (error) {
         console.error('Failed to fetch audit logs:', error);
+        tableBody.innerHTML = '<tr><td colspan="6" class="empty error-text">Failed to load audit logs</td></tr>';
     }
 }
 
@@ -50,7 +56,13 @@ async function fetchKeys() {
 
     try {
         const response = await fetch('/api/v1/keys');
-        if (!response.ok) throw new Error('Keys API unreachable');
+        if (!response.ok) {
+            if (response.status === 401 || response.status === 403) {
+                tableBody.innerHTML = '<tr><td colspan="5" class="empty">Authentication required</td></tr>';
+                return;
+            }
+            throw new Error('Keys API unreachable');
+        }
         
         const data = await response.json();
         const keys = data.items || [];
@@ -64,7 +76,7 @@ async function fetchKeys() {
             <tr>
                 <td>${escapeHtml(key.id)}</td>
                 <td>${escapeHtml(key.algorithm)}</td>
-                <td>${escapeHtml(key.state)}</td>
+                <td><span class="state-tag state-${key.state.toLowerCase()}">${escapeHtml(key.state)}</span></td>
                 <td>
                     ${key.usage.map(use => `<span class="tag">${escapeHtml(use)}</span>`).join(' ')}
                 </td>
@@ -73,6 +85,16 @@ async function fetchKeys() {
         `).join('');
     } catch (error) {
         console.error('Failed to fetch keys:', error);
+        tableBody.innerHTML = '<tr><td colspan="5" class="empty error-text">Failed to load key inventory</td></tr>';
+    }
+}
+
+function formatDate(isoString) {
+    try {
+        const date = new Date(isoString);
+        return date.toLocaleString();
+    } catch (e) {
+        return isoString;
     }
 }
 

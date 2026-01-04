@@ -276,4 +276,36 @@ mod tests {
             response.headers().get("content-type").unwrap().to_str().unwrap().contains("javascript")
         );
     }
+
+    #[tokio::test]
+    async fn test_authentication_enforcement() {
+        let (app, _tmp) = setup_test_app().await;
+
+        let protected_uris = vec![
+            "/ui",
+            "/api/v1/keys",
+            "/api/v1/audit/recent",
+        ];
+
+        for uri in protected_uris {
+            let response = app.clone()
+                .oneshot(
+                    Request::builder()
+                        .uri(uri)
+                        .extension(axum::extract::connect_info::ConnectInfo(
+                            "127.0.0.1:1234".parse::<std::net::SocketAddr>().unwrap(),
+                        ))
+                        .body(Body::empty())
+                        .unwrap(),
+                )
+                .await
+                .unwrap();
+
+            assert_eq!(
+                response.status(), 
+                StatusCode::UNAUTHORIZED, 
+                "URI {} should be protected", uri
+            );
+        }
+    }
 }
