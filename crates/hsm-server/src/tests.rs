@@ -218,4 +218,42 @@ mod tests {
         assert_eq!(body["items"].as_array().unwrap().len(), 1);
         assert_eq!(body["items"][0]["algorithm"], "Aes256Gcm");
     }
+
+    #[tokio::test]
+    async fn test_recent_audit_logs_api() {
+        let (app, _tmp) = setup_test_app().await;
+
+        // Generate a token
+        let secret = "test-secret-must-be-at-least-32-bytes-long-for-hmac";
+        let claims = serde_json::json!({
+            "sub": "test-user",
+            "roles": ["Administrator"],
+            "exp": 2000000000,
+        });
+        let token = jsonwebtoken::encode(
+            &jsonwebtoken::Header::default(),
+            &claims,
+            &jsonwebtoken::EncodingKey::from_secret(secret.as_bytes()),
+        ).unwrap();
+
+        let response = app
+            .oneshot(
+                Request::builder()
+                    .uri("/api/v1/audit/recent")
+                    .header("Authorization", format!("Bearer {}", token))
+                    .extension(axum::extract::connect_info::ConnectInfo(
+                        "127.0.0.1:1234".parse::<std::net::SocketAddr>().unwrap(),
+                    ))
+                    .body(Body::empty())
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+
+        assert_eq!(response.status(), StatusCode::OK);
+        let body_bytes = axum::body::to_bytes(response.into_body(), 10000).await.unwrap();
+        let body: serde_json::Value = serde_json::from_slice(&body_bytes).unwrap();
+        
+        assert!(body.is_array());
+    }
 }

@@ -280,6 +280,7 @@ pub(crate) fn create_router<P: PolicyEngine + 'static>(
             post(approve_pending_action),
         )
         .route("/api/v1/approvals/:id/deny", post(deny_pending_action))
+        .route("/api/v1/audit/recent", get(recent_audit))
         .route("/ui", get(render_dashboard))
         .route("/ui/approvals/:id/approve", post(approve_approval_ui))
         .route("/ui/approvals/:id/deny", post(deny_approval_ui))
@@ -993,6 +994,15 @@ async fn health_v1<P: PolicyEngine>(
     state: State<AppState<P>>,
 ) -> Result<Json<HealthResponse>, AppError> {
     health(state).await
+}
+
+async fn recent_audit<P: PolicyEngine>(
+    ConnectInfo(addr): ConnectInfo<SocketAddr>,
+    State(state): State<AppState<P>>,
+    headers: HeaderMap,
+) -> Result<Json<Vec<AuditEventSummary>>, AppError> {
+    let _ = authenticate_request(&state, &headers, addr.ip())?;
+    Ok(Json(state.audit_view.recent_events(50)))
 }
 
 async fn metrics_endpoint<P: PolicyEngine>(
