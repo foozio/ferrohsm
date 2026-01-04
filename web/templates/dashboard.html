@@ -5,6 +5,14 @@
   <h1>FerroHSM Operations Overview</h1>
   <p class="subtitle">Real-time visibility across approvals, audit trails, and key inventory</p>
 
+  <section class="status-banner" id="system-status-banner">
+    <div class="status-indicator">
+      <span class="status-dot status-unknown" id="status-dot"></span>
+      <span class="status-text" id="status-text">System Status: Loading...</span>
+    </div>
+    <div class="version-info" id="version-info"></div>
+  </section>
+
   <section class="metrics-grid">
     <article class="metric-card">
       <span class="metric-label">Uptime</span>
@@ -148,4 +156,6 @@
     </table>
   </section>
 </main>
+
+<script src="/static/dashboard.js"></script>
 {% endblock body %}

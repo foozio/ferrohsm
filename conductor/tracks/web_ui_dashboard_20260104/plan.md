@@ -18,7 +18,7 @@
 
 ## Phase 2: Frontend Dashboard Implementation
 
-- [ ] **Task: Create dashboard HTML structure**
+- [~] **Task: Create dashboard HTML structure**
   - Implement the basic HTML layout in `web/templates/dashboard.html` using the existing `layout.html`.
 - [ ] **Task: Implement Status visualization**
   - Write JS to fetch `/api/v1/status` and update the UI with system health.
