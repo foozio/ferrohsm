@@ -1,0 +1,8 @@
+{
+  "track_id": "web_ui_dashboard_20260104",
+  "type": "feature",
+  "status": "new",
+  "created_at": "2026-01-04T12:00:00Z",
+  "updated_at": "2026-01-04T12:00:00Z",
+  "description": "Implement the initial Web UI dashboard to visualize HSM status, active keys, and recent audit logs."
+}
